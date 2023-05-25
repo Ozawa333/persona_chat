@@ -24,7 +24,7 @@ from transformers import AutoTokenizer, BloomTokenizerFast, DebertaV2Tokenizer, 
 from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
 
 from colossalai.nn.optimizer import HybridAdam
-from dataprocess import HhRlhfDataset, PersonaPromptDataLoader, create_data, PersonaPromptDataset
+from dataprocess import HhRlhfDataset, PersonaPromptDataset, create_data, PersonaPromptProcess
 
 def train(args):
     # configure strategy
@@ -101,8 +101,8 @@ def train(args):
     # prepare for data and dataset
     if args.dataset == 'PersonaChat':
         
-        train_dataset_chosen, train_dataset_rejected = PersonaPromptDataset("./datasets/convai/train_self_original.txt", args.max_datasets_size)
-        eval_dataset_chosen, eval_dataset_rejected = PersonaPromptDataset("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        train_dataset_chosen, train_dataset_rejected = PersonaPromptProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        eval_dataset_chosen, eval_dataset_rejected = PersonaPromptProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
 
         print("train dataset lenth", len(train_dataset_chosen))
         print("eval dataset lenth", len(eval_dataset_chosen))
@@ -122,9 +122,9 @@ def train(args):
         valid_data = data['test'].select((randint(0, len(eval_data) - 1) for _ in range(len(eval_data) // 5)))
 
     if args.dataset == 'PersonaChat':
-        train_dataset = PersonaPromptDataLoader(train_dataset_chosen, train_dataset_rejected, tokenizer, max_len)
-        valid_dataset = PersonaPromptDataLoader(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
-        eval_dataset = PersonaPromptDataLoader(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
+        train_dataset = PersonaPromptDataset(train_dataset_chosen, train_dataset_rejected, tokenizer, max_len)
+        valid_dataset = PersonaPromptDataset(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
+        eval_dataset = PersonaPromptDataset(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
     elif args.dataset == 'Dahoas/rm-static':
         train_dataset = RmStaticDataset(train_data, tokenizer, max_len)
         valid_dataset = RmStaticDataset(valid_data, tokenizer, max_len)

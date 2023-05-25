@@ -25,7 +25,7 @@ from tqdm import tqdm
 import itertools
 import random
 
-from dataprocess import PromptDataset, PersonaPromptDataLoader, create_data, PersonaPromptDataset
+from dataprocess import PromptDataset, PersonaPromptOnlyDataset, create_data
 
 def main(args):
     # configure strategy
@@ -147,8 +147,20 @@ def main(args):
     # configure dataset
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     
-    if(args.dataset == 'PersonaChat'):
+    if(args.prompt_dataset == 'PersonaChat'):
         print("Build dataset")
+        #prompt dataset
+        
+        prompt_dataset = PersonaPromptOnlyDataset(tokenizer=tokenizer, data_path="./datasets/convai/train_self_original.txt", max_datasets_size=args.max_datasets_size, max_length = args.max_input_len)
+        if dist.is_initialized() and dist.get_world_size() > 1:
+            prompt_sampler = DistributedSampler(prompt_dataset, shuffle=True, seed=42, drop_last=True)
+        else:
+            prompt_sampler = None
+        prompt_dataloader = DataLoader(prompt_dataset,
+                                       shuffle=(prompt_sampler is None),
+                                       sampler=prompt_sampler,
+                                       batch_size=args.experience_batch_size)
+        
         #pretrain dataset
         train_inputs, train_outputs = PersonaPretrainDataset("./datasets/convai/train_self_original.txt", args.max_datasets_size)
         eval_inputs, eval_outputs = PersonaPretrainDataset("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
@@ -159,19 +171,8 @@ def main(args):
         train_dataset = PersonaPretrainDataLoader(train_inputs, train_outputs, tokenizer, max_len)
         eval_dataset = PersonaPretrainDataLoader(eval_inputs, eval_outputs, tokenizer, max_len)
         
-        #prompt dataset
-        train_dataset_chosen, train_dataset_rejected = PersonaPromptDataset("./datasets/convai/train_self_original.txt", args.max_datasets_size)
-        eval_dataset_chosen, eval_dataset_rejected = PersonaPromptDataset("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
-
-        print("train dataset lenth", len(train_dataset_chosen))
-        print("eval dataset lenth", len(eval_dataset_chosen))
-        
-        train_dataset = PersonaPromptDataLoader(train_dataset_chosen, train_dataset_rejected, tokenizer, max_len)
-        valid_dataset = PersonaPromptDataLoader(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
-        eval_dataset = PersonaPromptDataLoader(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
-        
     else: 
-        prompt_dataset = PromptDataset(tokenizer=tokenizer, data_path=args.prompt_dataset, max_datasets_size=16384)
+        prompt_dataset = PromptDataset(tokenizer=tokenizer, data_path=args.prompt_dataset, max_datasets_size=16384, max_length = args.max_input_len)
         if dist.is_initialized() and dist.get_world_size() > 1:
             prompt_sampler = DistributedSampler(prompt_dataset, shuffle=True, seed=42, drop_last=True)
         else:
@@ -262,9 +263,6 @@ if __name__ == '__main__':
     parser.add_argument('--ptx_coef', type=float, default=0.9)
     parser.add_argument('--max_input_len', type=int, default=96)
     parser.add_argument('--max_seq_len', type=int, default=128)
+    parser.add_argument('--max_datasets_size', type=int, default=128)
     args = parser.parse_args()
     main(args)
-prompt_dataloader = DataLoader(prompt_dataset,
-                                   shuffle=(prompt_sampler is None),
-                                   sampler=prompt_sampler,
-                                   batch_size=args.experience_batch_size)
