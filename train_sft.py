@@ -24,7 +24,7 @@ from colossalai.logging import get_dist_logger
 from colossalai.nn.optimizer import HybridAdam
 from colossalai.tensor import ColoParameter
 
-from dataprocess import SFTDataset, PersonaPretrainDataLoader, create_data, PersonaPretrainDataset
+from dataprocess import SFTDataset, PersonaPretrainProcess, create_data, PersonaPretrainDataset
 
 
 def train(args):
@@ -108,14 +108,14 @@ def train(args):
     if args.dataset == 'PersonaChat':
         print("Build dataset")
         
-        train_inputs, train_outputs = PersonaPretrainDataset("./datasets/convai/train_self_original.txt", args.max_datasets_size)
-        eval_inputs, eval_outputs = PersonaPretrainDataset("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        train_inputs, train_outputs = PersonaPretrainProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        eval_inputs, eval_outputs = PersonaPretrainProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
 
         print("train dataset lenth: ", len(train_inputs))
         print("eval dataset lenth: ", len(eval_inputs))
         
-        train_dataset = PersonaPretrainDataLoader(train_inputs, train_outputs, tokenizer, max_len)
-        eval_dataset = PersonaPretrainDataLoader(eval_inputs, eval_outputs, tokenizer, max_len)
+        train_dataset = PersonaPretrainDataset(train_inputs, train_outputs, tokenizer, max_len)
+        eval_dataset = PersonaPretrainDataset(eval_inputs, eval_outputs, tokenizer, max_len)
 
     elif args.dataset == 'yizhongw/self_instruct':
         train_data = load_dataset(args.dataset, 'super_natural_instructions', split='train')

@@ -71,10 +71,10 @@ class PersonaPromptOnlyDataset(Dataset):
         if max_datasets_size is not None:
             logger.info(f"Limiting dataset to {max_datasets_size} examples.")
             list_data_dict = list_data_dict[:max_datasets_size]
-        print(list_data_dict[:2])
+        # print(list_data_dict[:2])
         for data_dict in list_data_dict:
-            print(data_dict)
-            print('-'*50)
+            # print(data_dict)
+            # print('-'*50)
             token = tokenizer(data_dict,
                               return_tensors='pt',
                               max_length=max_length,
@@ -122,6 +122,40 @@ class PromptDataset(Dataset):
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         return {k: v[i] for k, v in self.keyed_prompt.items()}
+
+
+class SupervisedDataset(Dataset):
+    """Dataset for supervised fine-tuning."""
+
+    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, max_datasets_size: int = None, max_length: int = 512):
+        super(SupervisedDataset, self).__init__()
+        logger.info("Loading data...")
+        list_data_dict = jload(data_path)
+        logger.info(f"Loaded {len(list_data_dict)} examples.")
+
+        if max_datasets_size is not None:
+            logger.info(f"Limiting dataset to {max_datasets_size} examples.")
+            list_data_dict = list_data_dict[:max_datasets_size]
+
+        logger.info("Formatting inputs...")
+        prompt_input, prompt_no_input = PROMPT_DICT["prompt_input"], PROMPT_DICT["prompt_no_input"]
+        sources = [
+            prompt_input.format_map(example) if example.get("input", "") != "" else prompt_no_input.format_map(example)
+            for example in list_data_dict
+        ]
+        targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
+
+        logger.info("Tokenizing inputs... This may take some time...")
+        data_dict = preprocess(sources, targets, tokenizer, max_length)
+
+        self.input_ids = data_dict["input_ids"]
+        self.labels = data_dict["labels"]
+
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
 
 """reward"""
@@ -268,7 +302,7 @@ class HhRlhfDataset(Dataset):
 
 
 """STF"""
-def PersonaPretrainDataset(data_file, max_datasets_size):
+def PersonaPretrainProcess(data_file, max_datasets_size):
     inputs = []
     outputs = []
     persona, query, response, _ = create_data(data_file, max_datasets_size)
@@ -288,7 +322,7 @@ def PersonaPretrainDataset(data_file, max_datasets_size):
     return inputs, outputs
     
     
-class PersonaPretrainDataLoader(Dataset):
+class PersonaPretrainDataset(Dataset):
     """
     Dataset for sft model
 

@@ -25,7 +25,7 @@ from tqdm import tqdm
 import itertools
 import random
 
-from dataprocess import PromptDataset, PersonaPromptOnlyDataset, create_data
+from dataprocess import PromptDataset, PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset
 
 def main(args):
     # configure strategy
@@ -162,14 +162,24 @@ def main(args):
                                        batch_size=args.experience_batch_size)
         
         #pretrain dataset
-        train_inputs, train_outputs = PersonaPretrainDataset("./datasets/convai/train_self_original.txt", args.max_datasets_size)
-        eval_inputs, eval_outputs = PersonaPretrainDataset("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        train_inputs, train_outputs = PersonaPretrainProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        # eval_inputs, eval_outputs = PersonaPretrainProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
 
         print("train dataset lenth: ", len(train_inputs))
-        print("eval dataset lenth: ", len(eval_inputs))
+        # print("eval dataset lenth: ", len(eval_inputs))
         
-        train_dataset = PersonaPretrainDataLoader(train_inputs, train_outputs, tokenizer, max_len)
-        eval_dataset = PersonaPretrainDataLoader(eval_inputs, eval_outputs, tokenizer, max_len)
+        pretrain_dataset = PersonaPretrainDataset(train_inputs, train_outputs, tokenizer, max_length = args.max_input_len)
+        # eval_dataset = PersonaPretrainDataset(eval_inputs, eval_outputs, tokenizer, max_len)
+        
+        if dist.is_initialized() and dist.get_world_size() > 1:
+            pretrain_sampler = DistributedSampler(pretrain_dataset, shuffle=True, seed=42, drop_last=True)
+        else:
+            pretrain_sampler = None
+        pretrain_dataloader = DataLoader(pretrain_dataset,
+                                         shuffle=(pretrain_sampler is None),
+                                         sampler=pretrain_sampler,
+                                         batch_size=args.ptx_batch_size,
+                                         collate_fn=data_collator)
         
     else: 
         prompt_dataset = PromptDataset(tokenizer=tokenizer, data_path=args.prompt_dataset, max_datasets_size=16384, max_length = args.max_input_len)
