@@ -25,7 +25,7 @@ from tqdm import tqdm
 import itertools
 import random
 
-from dataprocess import PromptDataset, PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset
+from dataprocess import PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset, PromptDataset
 
 def main(args):
     # configure strategy
@@ -182,7 +182,8 @@ def main(args):
                                          collate_fn=data_collator)
         
     else: 
-        prompt_dataset = PromptDataset(tokenizer=tokenizer, data_path=args.prompt_dataset, max_datasets_size=16384, max_length = args.max_input_len)
+
+        prompt_dataset = PromptDataset(tokenizer=tokenizer, data_path='datasets/prompts_en.jsonl', max_datasets_size=16384)
         if dist.is_initialized() and dist.get_world_size() > 1:
             prompt_sampler = DistributedSampler(prompt_dataset, shuffle=True, seed=42, drop_last=True)
         else:
@@ -191,9 +192,14 @@ def main(args):
                                        shuffle=(prompt_sampler is None),
                                        sampler=prompt_sampler,
                                        batch_size=args.experience_batch_size)
-
+        #prompt_dataloader.next()
+        for index, data in enumerate(prompt_dataloader):
+            print(data)
+            if(index > 2):
+                break
+        
         pretrain_dataset = SupervisedDataset(tokenizer=tokenizer,
-                                             data_path=args.pretrain_dataset,
+                                             data_path='datasets/instinwild_en.json',
                                              max_datasets_size=16384,
                                              max_length=args.max_input_len)
         if dist.is_initialized() and dist.get_world_size() > 1:
