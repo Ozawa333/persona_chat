@@ -156,6 +156,14 @@ def train(args):
                                   batch_size=args.batch_size,
                                   collate_fn=data_collator,
                                   pin_memory=True)
+    #for index, data in enumerate(train_dataloader):
+        #print(data)
+        #print(len(data['input_ids']))
+        #print(len(data['input_ids'][0]))
+        #print(len(data['attention_mask']))
+        #print(len(data['attention_mask'][0]))
+        #if(index > 1):
+            #break
     if eval_dataset is not None:
         eval_dataloader = DataLoader(eval_dataset,
                                      shuffle=(eval_sampler is None),

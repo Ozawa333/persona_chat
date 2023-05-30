@@ -3,7 +3,7 @@ import argparse
 import pandas as pd
 import torch
 import torch.distributed as dist
-from coati.dataset import DataCollatorForSupervisedDataset, SupervisedDataset
+from coati.dataset import DataCollatorForSupervisedDataset, PromptDataset
 from coati.models.bloom import BLOOMRM, BLOOMActor, BLOOMCritic
 from coati.models.gpt import GPTRM, GPTActor, GPTCritic
 from coati.models.llama import LlamaActor, LlamaCritic, LlamaRM
@@ -25,7 +25,7 @@ from tqdm import tqdm
 import itertools
 import random
 
-from dataprocess import PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset, PromptDataset
+from dataprocess import PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset, SupervisedDataset
 
 def main(args):
     # configure strategy
@@ -149,8 +149,8 @@ def main(args):
     
     if(args.prompt_dataset == 'PersonaChat'):
         print("Build dataset")
+
         #prompt dataset
-        
         prompt_dataset = PersonaPromptOnlyDataset(tokenizer=tokenizer, data_path="./datasets/convai/train_self_original.txt", max_datasets_size=args.max_datasets_size, max_length = args.max_input_len)
         if dist.is_initialized() and dist.get_world_size() > 1:
             prompt_sampler = DistributedSampler(prompt_dataset, shuffle=True, seed=42, drop_last=True)
@@ -160,7 +160,15 @@ def main(args):
                                        shuffle=(prompt_sampler is None),
                                        sampler=prompt_sampler,
                                        batch_size=args.experience_batch_size)
-        
+        #for index, data in enumerate(prompt_dataloader):
+            #print(data)
+            #print(len(data['input_ids']))
+            #print(len(data['input_ids'][0]))
+            #print(len(data['attention_mask']))
+            #print(len(data['attention_mask'][0]))
+            #if(index > 1):
+            #    break
+
         #pretrain dataset
         train_inputs, train_outputs = PersonaPretrainProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
         # eval_inputs, eval_outputs = PersonaPretrainProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
@@ -180,9 +188,15 @@ def main(args):
                                          sampler=pretrain_sampler,
                                          batch_size=args.ptx_batch_size,
                                          collate_fn=data_collator)
-        
+        #for index, data in enumerate(pretrain_dataloader):
+            #print(data)
+            #print(len(data['input_ids']))
+            #print(len(data['input_ids'][0]))
+            #print(len(data['attention_mask']))
+            #print(len(data['attention_mask'][0]))
+            #if(index > 1):
+                #break
     else: 
-
         prompt_dataset = PromptDataset(tokenizer=tokenizer, data_path='datasets/prompts_en.jsonl', max_datasets_size=16384)
         if dist.is_initialized() and dist.get_world_size() > 1:
             prompt_sampler = DistributedSampler(prompt_dataset, shuffle=True, seed=42, drop_last=True)
@@ -192,11 +206,14 @@ def main(args):
                                        shuffle=(prompt_sampler is None),
                                        sampler=prompt_sampler,
                                        batch_size=args.experience_batch_size)
-        #prompt_dataloader.next()
-        for index, data in enumerate(prompt_dataloader):
-            print(data)
-            if(index > 2):
-                break
+        #for index, data in enumerate(prompt_dataloader):
+            #print(data)
+            #print(len(data['input_ids']))
+            #print(len(data['input_ids'][0]))
+            #print(len(data['attention_mask']))
+            #print(len(data['attention_mask'][0]))
+            #if(index > 1):
+            #    break
         
         pretrain_dataset = SupervisedDataset(tokenizer=tokenizer,
                                              data_path='datasets/instinwild_en.json',
@@ -211,7 +228,14 @@ def main(args):
                                          sampler=pretrain_sampler,
                                          batch_size=args.ptx_batch_size,
                                          collate_fn=data_collator)
-    
+        #for index, data in enumerate(pretrain_dataloader):
+            #print(data)
+            #print(len(data['input_ids']))
+            #print(len(data['input_ids'][0]))
+            #print(len(data['attention_mask']))
+            #print(len(data['attention_mask'][0]))
+            #if(index > 1):
+                #break
     
     (actor, actor_optim), (critic, critic_optim) = strategy.prepare((actor, actor_optim), (critic, critic_optim))
 
