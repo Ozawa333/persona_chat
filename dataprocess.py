@@ -125,19 +125,19 @@ def PersonaPromptOnlyProcess(data_file, max_datasets_size):
     dataset_prompt = []
     
     persona, query, response, _ = create_data(data_file, max_datasets_size)
-
+    # print('persona', len(persona), max_datasets_size)
     for i in range(len(persona)):
         dialogue = []
         dialogue.append(query[i][0])
 
         dataset_prompt.append( "\n".join(persona[i] + [query[i][0]] ))
-
+        #print(len(query[i])-1)
         for j in range(len(query[i])-1):
             dialogue.append(response[i][j])
             dialogue.append(query[i][j+1])
 
             dataset_prompt.append( "\n".join(persona[i] + dialogue ))
-
+    #print(len(dataset_prompt))
     return dataset_prompt
 
 class PersonaPromptOnlyDataset(Dataset):
@@ -156,8 +156,8 @@ class PersonaPromptOnlyDataset(Dataset):
         if max_datasets_size is not None:
             logger.info(f"Limiting dataset to {max_datasets_size} examples.")
             list_data_dict = list_data_dict[:max_datasets_size]
-        #print(list_data_dict[:2])
-        for data_dict in list_data_dict:
+        # print('-'*50, len(list_data_dict))
+        for data_dict in tqdm(list_data_dict):
             #print(data_dict)
             #print(type(data_dict))
             #print("-"*50)
@@ -195,7 +195,7 @@ class PromptDataset(Dataset):
             logger.info(f"Limiting dataset to {max_datasets_size} examples.")
             list_data_dict = list_data_dict[:max_datasets_size]
 
-        #print(list_data_dict[:2])
+        # print('-'*50, len(list_data_dict))
         for data_dict in list_data_dict:
             #print(data_dict["instruction"])
             #print(type(data_dict["instruction"]))
@@ -400,6 +400,7 @@ def PersonaPretrainProcess(data_file, max_datasets_size):
     inputs = []
     outputs = []
     persona, query, response, _ = create_data(data_file, max_datasets_size)
+    #print('persona', len(persona), max_datasets_size)
     #print(query[0][:10])
     #print(response[0][:10])
     for i in range(len(persona)):

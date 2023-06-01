@@ -110,13 +110,13 @@ def train(args):
         
         train_inputs, train_outputs = PersonaPretrainProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
         eval_inputs, eval_outputs = PersonaPretrainProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
-
-        print("train dataset lenth: ", len(train_inputs))
-        print("eval dataset lenth: ", len(eval_inputs))
         
         train_dataset = PersonaPretrainDataset(train_inputs, train_outputs, tokenizer, max_len)
         eval_dataset = PersonaPretrainDataset(eval_inputs, eval_outputs, tokenizer, max_len)
-
+        
+        print("train dataset lenth: ", len(train_dataset))
+        print("eval dataset lenth: ", len(eval_dataset))
+        
     elif args.dataset == 'yizhongw/self_instruct':
         train_data = load_dataset(args.dataset, 'super_natural_instructions', split='train')
         eval_data = load_dataset(args.dataset, 'super_natural_instructions', split='test')
@@ -156,6 +156,7 @@ def train(args):
                                   batch_size=args.batch_size,
                                   collate_fn=data_collator,
                                   pin_memory=True)
+    print('train_dataloader lenth: ', len(train_dataloader))
     #for index, data in enumerate(train_dataloader):
         #print(data)
         #print(len(data['input_ids']))

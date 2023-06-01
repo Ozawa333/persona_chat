@@ -3,7 +3,7 @@ import argparse
 import pandas as pd
 import torch
 import torch.distributed as dist
-from coati.dataset import DataCollatorForSupervisedDataset, PromptDataset
+from coati.dataset import DataCollatorForSupervisedDataset
 from coati.models.bloom import BLOOMRM, BLOOMActor, BLOOMCritic
 from coati.models.gpt import GPTRM, GPTActor, GPTCritic
 from coati.models.llama import LlamaActor, LlamaCritic, LlamaRM
@@ -25,7 +25,7 @@ from tqdm import tqdm
 import itertools
 import random
 
-from dataprocess import PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset, SupervisedDataset
+from dataprocess import PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset, SupervisedDataset, PromptDataset
 
 def main(args):
     # configure strategy
@@ -160,6 +160,7 @@ def main(args):
                                        shuffle=(prompt_sampler is None),
                                        sampler=prompt_sampler,
                                        batch_size=args.experience_batch_size)
+        print('prompt_dataloader', len(prompt_dataloader))
         #for index, data in enumerate(prompt_dataloader):
             #print(data)
             #print(len(data['input_ids']))
@@ -188,6 +189,7 @@ def main(args):
                                          sampler=pretrain_sampler,
                                          batch_size=args.ptx_batch_size,
                                          collate_fn=data_collator)
+        print('pretrain_dataloader', len(pretrain_dataloader))
         #for index, data in enumerate(pretrain_dataloader):
             #print(data)
             #print(len(data['input_ids']))
@@ -206,6 +208,7 @@ def main(args):
                                        shuffle=(prompt_sampler is None),
                                        sampler=prompt_sampler,
                                        batch_size=args.experience_batch_size)
+        print('prompt_dataloader', len(prompt_dataloader))
         #for index, data in enumerate(prompt_dataloader):
             #print(data)
             #print(len(data['input_ids']))
@@ -303,6 +306,6 @@ if __name__ == '__main__':
     parser.add_argument('--ptx_coef', type=float, default=0.9)
     parser.add_argument('--max_input_len', type=int, default=96)
     parser.add_argument('--max_seq_len', type=int, default=128)
-    parser.add_argument('--max_datasets_size', type=int, default=128)
+    parser.add_argument('--max_datasets_size', type=int, default=None)
     args = parser.parse_args()
     main(args)
