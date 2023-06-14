@@ -427,42 +427,17 @@ class PersonaPretrainDataset(Dataset):
         max_length: max length of input
     """
 
-    def __init__(self, inputs, outputs, tokenizer: Callable, max_length: int = 512) -> None:
+    def __init__(self, input_ids, labels_ids, max_length: int = 512) -> None:
         super().__init__()
-        self.input_ids = []
-        self.labels = []
- 
-        for data in tqdm(inputs):
-            prompt_token = tokenizer(data,
-                                     max_length=max_length,
-                                     padding="max_length",
-                                     truncation=True,
-                                     return_tensors="pt")
-            self.input_ids.append(prompt_token['input_ids'][0])
-            
-        for data in tqdm(outputs):
-            label_token = tokenizer(data + tokenizer.eos_token,
-                                     max_length=max_length,
-                                     padding="max_length",
-                                     truncation=True,
-                                     return_tensors="pt")
-            self.labels.append(label_token['input_ids'][0])
-
-        #print(self.input_ids[:2])
-        #print(tokenizer.batch_decode(self.input_ids[:2], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0])
-        #print(self.labels[:2])
-        #print(tokenizer.batch_decode(self.labels[:2], skip_special_tokens=True,  clean_up_tokenization_spaces=False)[0])
-        # print('inputids length: ', len(self.input_ids))
-        # print('outputids length: ', len(self.labels))
-        #print(len(self.input_ids[0]))
-        #print(len(self.labels[0]))
+        self.input_ids = labels_ids
+        self.labels_ids = labels_ids
 
     def __len__(self):
         length = len(self.input_ids)
         return length
 
     def __getitem__(self, idx):
-        return dict(input_ids=self.input_ids[idx], labels=self.labels[idx])
+        return dict(input_ids=self.input_ids[idx], labels=self.labels_ids[idx])
 
    
 class SFTDataset(Dataset):

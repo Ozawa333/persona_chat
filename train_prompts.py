@@ -130,7 +130,7 @@ def main(args):
     elif args.model == 'bloom':
         tokenizer = BloomTokenizerFast.from_pretrained('bigscience/bloom-560m')
     elif args.model == 'opt':
-        tokenizer = AutoTokenizer.from_pretrained("facebook/opt-350m")
+        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     elif args.model == 'llama':
         tokenizer = LlamaTokenizer.from_pretrained(args.pretrain)
         tokenizer.eos_token = '<\s>'
@@ -306,6 +306,7 @@ if __name__ == '__main__':
     parser.add_argument('--ptx_coef', type=float, default=0.9)
     parser.add_argument('--max_input_len', type=int, default=96)
     parser.add_argument('--max_seq_len', type=int, default=128)
+    parser.add_argument('--tokenizer', type=str, default=None)
     parser.add_argument('--max_datasets_size', type=int, default=None)
     args = parser.parse_args()
     main(args)

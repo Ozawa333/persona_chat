@@ -21,9 +21,10 @@ def eval(args):
         actor = RoBERTaActor(pretrained=args.pretrain).to(torch.cuda.current_device())
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
-
-    state_dict = torch.load(args.model_path)
-    actor.model.load_state_dict(state_dict)
+    
+    if args.model_path is not None:
+        state_dict = torch.load(args.model_path)
+        actor.model.load_state_dict(state_dict, strict=False)
 
     # configure tokenizer
     if args.model == 'gpt2':
@@ -33,14 +34,15 @@ def eval(args):
         tokenizer = AutoTokenizer.from_pretrained('bigscience/bloom-560m')
         tokenizer.pad_token = tokenizer.eos_token
     elif args.model == 'opt':
-        tokenizer = AutoTokenizer.from_pretrained('facebook/opt-350m')
+        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     elif args.model == 'roberta':
         tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
 
     actor.eval()
-    input = args.input
+    #input = args.input
+    input = "i like to remodel homes.\ni like to go hunting.\ni like to shoot a bow.\nmy favorite holiday is halloween.\nhi , how are you doing ? i\'m getting ready to do some cheetah chasing to stay in shape .\n"
     input_ids = tokenizer.encode(input, return_tensors='pt').to(torch.cuda.current_device())
     outputs = actor.generate(input_ids,
                              max_length=args.max_length,
@@ -49,7 +51,7 @@ def eval(args):
                              top_p=0.95,
                              num_return_sequences=1)
     output = tokenizer.batch_decode(outputs[0], skip_special_tokens=True)
-    print(output)
+    print(output[0])
 
 
 if __name__ == '__main__':
@@ -60,5 +62,6 @@ if __name__ == '__main__':
     parser.add_argument('--model_path', type=str, default=None)
     parser.add_argument('--input', type=str, default='Question: How are you ? Answer:')
     parser.add_argument('--max_length', type=int, default=100)
+    parser.add_argument('--tokenizer', type=str, default=None)
     args = parser.parse_args()
     eval(args)

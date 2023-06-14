@@ -11,7 +11,7 @@ from coati.trainer.strategies import ColossalAIStrategy, DDPStrategy, NaiveStrat
 from coati.utils import prepare_llama_tokenizer_and_embedding
 from datasets import load_dataset
 from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 from transformers import AutoTokenizer, BloomConfig, BloomForCausalLM, BloomTokenizerFast, LlamaConfig, LlamaForCausalLM
 from transformers.models.gpt2.configuration_gpt2 import GPT2Config
@@ -24,8 +24,8 @@ from colossalai.logging import get_dist_logger
 from colossalai.nn.optimizer import HybridAdam
 from colossalai.tensor import ColoParameter
 
-from dataprocess import SFTDataset, PersonaPretrainProcess, create_data, PersonaPretrainDataset
-
+from dataprocess import SFTDataset, PersonaPretrainProcess, PersonaPretrainDataset
+from build_data_PersonaChat import create_data, build_dataloader
 
 def train(args):
     # configure strategy
@@ -77,6 +77,11 @@ def train(args):
             use_fast=False,
         )
         tokenizer.eos_token = '<\s>'
+        tokenizer.bos_token = '<s>'
+        special_tokens_dict = {"sep_token": "<\sep>", "pad_token": "<\pad>"}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
+        
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
     tokenizer.pad_token = tokenizer.eos_token
@@ -106,6 +111,7 @@ def train(args):
 
     # configure dataset
     if args.dataset == 'PersonaChat':
+        '''
         print("Build dataset")
         
         train_inputs, train_outputs = PersonaPretrainProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
@@ -114,8 +120,24 @@ def train(args):
         train_dataset = PersonaPretrainDataset(train_inputs, train_outputs, tokenizer, max_len)
         eval_dataset = PersonaPretrainDataset(eval_inputs, eval_outputs, tokenizer, max_len)
         
-        print("train dataset lenth: ", len(train_dataset))
-        print("eval dataset lenth: ", len(eval_dataset))
+        #print("train dataset lenth: ", len(train_dataset))
+        #print("eval dataset lenth: ", len(eval_dataset))
+        #print(train_dataset[:2])
+        '''
+        logger.info("Build train data")
+        persona, query, response, cand = create_data("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        train_data = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
+        logger.info("Build valid data")
+        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        eval_dataset = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
+        
+        #print(train_data['input_ids'][:2])
+        #print(train_data['lmlabels'][:2])
+        #print(tokenizer.decode(train_data['input_ids'][1]))
+        train_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['lmlabels']))
+        eval_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['lmlabels']))
+        #print(train_dataset[0:2])
+        #print('-'*50)
         
     elif args.dataset == 'yizhongw/self_instruct':
         train_data = load_dataset(args.dataset, 'super_natural_instructions', split='train')
@@ -157,12 +179,15 @@ def train(args):
                                   collate_fn=data_collator,
                                   pin_memory=True)
     print('train_dataloader lenth: ', len(train_dataloader))
+    
     #for index, data in enumerate(train_dataloader):
         #print(data)
         #print(len(data['input_ids']))
         #print(len(data['input_ids'][0]))
+        #print(len(data['labels'][0]))
         #print(len(data['attention_mask']))
         #print(len(data['attention_mask'][0]))
+        
         #if(index > 1):
             #break
     if eval_dataset is not None:
