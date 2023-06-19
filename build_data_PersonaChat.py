@@ -112,8 +112,10 @@ def create_decoder_input(response_ids, res_id, eos_id, golden=None):
 
 
 def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n_cand=5, use_all=False):
+    max_length = 512
     bos_id, eos_id, pad_id, sep_id, query_id, res_id, latent_id, persona_id = get_token_id(tokenizer)
     dataset = defaultdict(list)
+    pad_id_list = [pad_id]*max_length
     for i in range(len(persona)):
         persona_ = persona[i]
         per_list = []
@@ -147,7 +149,14 @@ def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n
                                                                      latent_id, persona_id, sep_id, eos_id)
             decoder_lmlabel, decoder_input_ids, decoder_cls_idx,\
                 decoder_attention_mask = create_decoder_input(response_ids, res_id, eos_id, golden=True)
-
+            
+            #print(encoder_input_ids)
+            encoder_input_ids = encoder_input_ids + pad_id_list
+            encoder_input_ids = encoder_input_ids[:max_length]
+            #print(encoder_input_ids)
+            decoder_lmlabel = decoder_lmlabel + pad_id_list
+            decoder_lmlabel = decoder_lmlabel[:max_length]
+            
             dataset["input_ids"].append(encoder_input_ids)
             dataset["attention_mask"].append(attention_mask)
             dataset["per_input_ids"].append(per_input_ids)
@@ -180,7 +189,7 @@ def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n
             dataset[item_name] = item
         elif item_name == "lmlabels":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
-                                batch_first=True, padding_value=pad_id)
+                                batch_first=True, padding_value=-100)
             dataset[item_name] = item
         elif item_name == "attention_mask" or item_name == "decoder_attention_mask" or item_name == "per_attention_mask":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
@@ -194,9 +203,9 @@ def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n
             dataset[item_name] = torch.tensor(item).view(-1,1)
         elif item_name == "cls_index":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
-                                batch_first=True, padding_value=pad_id)
+                                batch_first=True, padding_value=-100)
             dataset[item_name] = item
-  
+
     return dataset
 
 
@@ -252,7 +261,34 @@ def build_infer_dataset(tokenizer, file_path):
     return positive_set
 
 
+def pad_dataset(dataset, pad_id):
+    for item_name, item in dataset.items():
+        if item_name == "input_ids" or item_name == "per_input_ids":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                              batch_first=True, padding_value=pad_id)
 
+            dataset[item_name] = item
+        elif item_name == "lmlabels":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "attention_mask" or item_name == "decoder_attention_mask" or item_name == "per_attention_mask":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "decoder_input_ids":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "clslabel":
+            dataset[item_name] = torch.tensor(item).view(-1,1)
+        elif item_name == "cls_index":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+
+
+    return dataset
 
 
 

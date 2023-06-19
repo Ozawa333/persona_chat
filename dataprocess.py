@@ -429,7 +429,7 @@ class PersonaPretrainDataset(Dataset):
 
     def __init__(self, input_ids, labels_ids, max_length: int = 512) -> None:
         super().__init__()
-        self.input_ids = labels_ids
+        self.input_ids = input_ids
         self.labels_ids = labels_ids
 
     def __len__(self):

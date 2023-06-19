@@ -44,22 +44,6 @@ def train(args):
     else:
         raise ValueError(f'Unsupported strategy "{args.strategy}"')
 
-    # configure model
-    with strategy.model_init_context():
-        if args.model == 'bloom':
-            model = convert_to_lora_module(BloomForCausalLM.from_pretrained(args.pretrain),
-                                           args.lora_rank).half().cuda()
-        elif args.model == 'opt':
-            model = convert_to_lora_module(OPTForCausalLM.from_pretrained(args.pretrain), args.lora_rank).half().cuda()
-        elif args.model == 'gpt2':
-            model = convert_to_lora_module(GPT2LMHeadModel.from_pretrained(args.pretrain), args.lora_rank).half().cuda()
-        elif args.model == 'llama':
-            model = convert_to_lora_module(LlamaForCausalLM.from_pretrained(args.pretrain),
-                                           args.lora_rank).half().cuda()
-        else:
-            raise ValueError(f'Unsupported model "{args.model}"')
-    if args.grad_checkpoint:
-        model.gradient_checkpointing_enable()
 
     # configure tokenizer
     if args.model == 'gpt2':
@@ -84,8 +68,9 @@ def train(args):
         
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
-    tokenizer.pad_token = tokenizer.eos_token
+    #tokenizer.pad_token = tokenizer.eos_token
     max_len = args.max_len
+    '''
     if args.model == 'llama':
         tokenizer = prepare_llama_tokenizer_and_embedding(tokenizer, model)
 
@@ -100,7 +85,27 @@ def train(args):
                     setattr(sub_module, weight_name, ColoParameter(param))
     else:
         tokenizer.pad_token = tokenizer.eos_token
-
+    '''
+    
+    # configure model
+    with strategy.model_init_context():
+        if args.model == 'bloom':
+            model = convert_to_lora_module(BloomForCausalLM.from_pretrained(args.pretrain),
+                                           args.lora_rank).half().cuda()
+        elif args.model == 'opt':
+            model = convert_to_lora_module(OPTForCausalLM.from_pretrained(args.pretrain), args.lora_rank).half().cuda()
+        elif args.model == 'gpt2':
+            model = convert_to_lora_module(GPT2LMHeadModel.from_pretrained(args.pretrain), args.lora_rank).half().cuda()
+        elif args.model == 'llama':
+            model = LlamaForCausalLM.from_pretrained(args.pretrain)
+            model.resize_token_embeddings(len(tokenizer.get_vocab()))
+            model = convert_to_lora_module(model, args.lora_rank).half().cuda()
+        else:
+            raise ValueError(f'Unsupported model "{args.model}"')
+    if args.grad_checkpoint:
+        model.gradient_checkpointing_enable()
+    
+    
     # configure optimizer
     if args.strategy.startswith('colossalai'):
         optim = HybridAdam(model.parameters(), lr=args.lr, clipping_norm=1.0)
@@ -131,8 +136,8 @@ def train(args):
         persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
         eval_dataset = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
         
-        #print(train_data['input_ids'][:2])
-        #print(train_data['lmlabels'][:2])
+        #print(len(train_data['input_ids']))
+        #print(train_data['lmlabels'][:3])
         #print(tokenizer.decode(train_data['input_ids'][1]))
         train_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['lmlabels']))
         eval_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['lmlabels']))
@@ -179,17 +184,23 @@ def train(args):
                                   collate_fn=data_collator,
                                   pin_memory=True)
     print('train_dataloader lenth: ', len(train_dataloader))
-    
-    #for index, data in enumerate(train_dataloader):
+    '''
+    for index, data in enumerate(train_dataloader):
         #print(data)
+        #print("-"*25)
+        print(data['input_ids'][0])
+        print(tokenizer.decode(data['input_ids'][0]))
         #print(len(data['input_ids']))
         #print(len(data['input_ids'][0]))
-        #print(len(data['labels'][0]))
+        
+        print(data['labels'][0])
+        print(tokenizer.decode(data['labels'][0]))
         #print(len(data['attention_mask']))
         #print(len(data['attention_mask'][0]))
-        
-        #if(index > 1):
-            #break
+        print("-"*50)
+        if(index > 10):
+            break
+    '''
     if eval_dataset is not None:
         eval_dataloader = DataLoader(eval_dataset,
                                      shuffle=(eval_sampler is None),
