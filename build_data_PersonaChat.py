@@ -189,11 +189,11 @@ def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n
             dataset[item_name] = item
         elif item_name == "lmlabels":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
-                                batch_first=True, padding_value=-100)
+                                batch_first=True, padding_value=pad_id)
             dataset[item_name] = item
         elif item_name == "attention_mask" or item_name == "decoder_attention_mask" or item_name == "per_attention_mask":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
-                                batch_first=True, padding_value=0)
+                                batch_first=True, padding_value=pad_id)
             dataset[item_name] = item
         elif item_name == "decoder_input_ids":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
@@ -203,7 +203,7 @@ def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n
             dataset[item_name] = torch.tensor(item).view(-1,1)
         elif item_name == "cls_index":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
-                                batch_first=True, padding_value=-100)
+                                batch_first=True, padding_value=pad_id)
             dataset[item_name] = item
 
     return dataset

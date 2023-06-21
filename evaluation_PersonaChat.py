@@ -13,7 +13,7 @@ from model.modeling_bart import LMEDRModel
 from utils import AttrDict
 #from eval_PersonaChat_build import  create_encoder_input, create_decoder_input, pad_dataset
 
-from transformers import AutoTokenizer, LlamaForCausalLM
+from transformers import AutoTokenizer, LlamaForCausalLM, OPTForCausalLM
 #from transformers.models.opt.modeling_opt import OPTForCausalLM
 from build_data_PersonaChat import create_encoder_input, create_decoder_input, pad_dataset
 
@@ -52,11 +52,21 @@ class TransformerAgent(Agent):
         torch.cuda.manual_seed(args.seed)
         
         self.logger.info("Get pretrained model and tokenizer")
-        if args.model_checkpoint == './checkpoint/step1/epoch5':
+        
+        
+        if args.model_checkpoint == 'persona_original' :
+            self.tokenizer = BartTokenizer.from_pretrained(args.model_checkpoint, add_prefix_space=True)
+            self.model_checkpoint = LMEDRModel.from_pretrained(args.model_checkpoint)
+
+            self.logger.info("Build BPE prefix dictionary")
+        
+        else:
+            #args.model_checkpoint == './checkpoint/step1/epoch5':
             self.tokenizer = AutoTokenizer.from_pretrained(
-                './checkpoint/llama_7B',
+                'facebook/opt-350m',
                 padding_side="right",
                 use_fast=False,
+                #'./checkpoint/llama_7B' facebook/opt-350m
             )
             
             self.tokenizer.eos_token = '<\s>'
@@ -65,19 +75,14 @@ class TransformerAgent(Agent):
             self.tokenizer.add_special_tokens(self.special_tokens_dict)
             
             self.tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
-            
-            self.model_checkpoint = LlamaForCausalLM.from_pretrained(args.model_checkpoint)
+            #LlamaForCausalLM OPTForCausalLM
+            self.model_checkpoint = OPTForCausalLM.from_pretrained('facebook/opt-350m')
             self.model_checkpoint.resize_token_embeddings(len(self.tokenizer.get_vocab()))
-        
-        elif args.model_checkpoint == 'persona_original' :
-            self.tokenizer = BartTokenizer.from_pretrained(args.model_checkpoint, add_prefix_space=True)
-            self.model_checkpoint = LMEDRModel.from_pretrained(args.model_checkpoint)
-
-            self.logger.info("Build BPE prefix dictionary")
+        '''
         else:
             self.model_checkpoint = shared['model']
             self.tokenizer = shared['tokenizer']
-        
+        '''
         if args.gpu != 0:
             self.model_checkpoint.to(args.gpu)
         else:
@@ -182,35 +187,51 @@ class TransformerAgent(Agent):
             reply = {'text': ypred, 'text_candidates': tc}
         else:
             input_ids, attention_mask, per_input_ids, per_attention_mask = create_encoder_input(self.persona, self.history, self.query_id,
-                                                                     self.res_id, self.latent_id, self.persona_id, self.sep_id,
-                                                self.eos_id)
+                                                                     self.res_id, self.latent_id, self.persona_id, self.sep_id, self.eos_id)
             tensor_input_ids = torch.tensor(input_ids, device=self.args.device if self.args.gpu ==0 else self.args.gpu).unsqueeze(0)
             tensor_per_input_ids = torch.tensor(per_input_ids, device=self.args.device if self.args.gpu ==0 else self.args.gpu).unsqueeze(0)
             tensor_attention_mask = torch.tensor(attention_mask, device=self.args.device if self.args.gpu ==0 else self.args.gpu).unsqueeze(0)
             tensor_per_attention_mask = torch.tensor(per_attention_mask,
-                                                 device=self.args.device if self.args.gpu == 0 else self.args.gpu).unsqueeze(
-                0)
+                                                 device=self.args.device if self.args.gpu == 0 else self.args.gpu).unsqueeze(0)
             self.model_checkpoint.eval()
             with torch.no_grad():
-                #print(tensor_input_ids)
-                #print(tensor_attention_mask)
                 '''
                 out_ids = self.model_checkpoint.generate(input_ids=tensor_input_ids,
                                                          attention_mask=tensor_attention_mask,
                                                          per_input_ids=tensor_per_input_ids,
                                                          per_attention_mask=tensor_per_attention_mask,
                                         max_length=self.args.max_length, num_beams=self.args.beam)
-                '''
+            out_text = self.tokenizer.batch_decode(out_ids, skip_special_tokens=True,
+                                                   spaces_between_special_tokens=False,
+                                                   clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
+            '''
+
                 out_ids = self.model_checkpoint.generate(input_ids=tensor_input_ids,
-                                         attention_mask=tensor_attention_mask,max_length=self.args.max_length)
-                
-            out_text = self.tokenizer.batch_decode(out_ids, skip_special_tokens=True, spaces_between_special_tokens=False,
-                                             clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
-            print(out_text[0])
-            print('-'*50)
+                                                         attention_mask=tensor_attention_mask,
+                                                        max_length=self.args.max_length,
+                                                        top_k=self.args.top_k,
+                                                        top_p=self.args.top_p,
+                                                        num_return_sequences=1,
+                                                        num_beams=self.args.beam)
+                    
+            out_text = self.tokenizer.batch_decode([out_ids[0][len(tensor_input_ids[0]):]], 
+                                                    skip_special_tokens=True,
+                                                    spaces_between_special_tokens=False,
+                                                    clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
+
+            #print(tensor_input_ids)
+            #print('-'*25)
+            #print([out_ids[0][len(tensor_input_ids[0]):]])
+            #print('-'*50)
+            #print(out_ids)
+            #print('-'*50)
+
+            #print(out_text)
+            #print('-'*100)
+            
             ans = out_text[0].strip()
             reply = {'text': ans}
-
+        
         return reply
 
 

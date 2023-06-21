@@ -4,7 +4,7 @@ import os
 import loralib as lora
 import torch
 import torch.distributed as dist
-from coati.dataset import DataCollatorForSupervisedDataset, SupervisedDataset
+from coati.dataset import DataCollatorForSupervisedDataset, SupervisedDataset, SFTDataset
 from coati.models import convert_to_lora_module
 from coati.trainer import SFTTrainer
 from coati.trainer.strategies import ColossalAIStrategy, DDPStrategy, NaiveStrategy
@@ -24,7 +24,7 @@ from colossalai.logging import get_dist_logger
 from colossalai.nn.optimizer import HybridAdam
 from colossalai.tensor import ColoParameter
 
-from dataprocess import SFTDataset, PersonaPretrainProcess, PersonaPretrainDataset
+from dataprocess import PersonaPretrainProcess, PersonaPretrainDataset
 from build_data_PersonaChat import create_data, build_dataloader
 
 def train(args):
@@ -60,15 +60,15 @@ def train(args):
             padding_side="right",
             use_fast=False,
         )
-        tokenizer.eos_token = '<\s>'
-        tokenizer.bos_token = '<s>'
-        special_tokens_dict = {"sep_token": "<\sep>", "pad_token": "<\pad>"}
-        tokenizer.add_special_tokens(special_tokens_dict)
-        tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
-        
+
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
     #tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.eos_token = '<\s>'
+    tokenizer.bos_token = '<s>'
+    special_tokens_dict = {"sep_token": "<\sep>", "pad_token": "<\pad>"}
+    tokenizer.add_special_tokens(special_tokens_dict)
+    tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
     max_len = args.max_len
     '''
     if args.model == 'llama':
@@ -93,7 +93,9 @@ def train(args):
             model = convert_to_lora_module(BloomForCausalLM.from_pretrained(args.pretrain),
                                            args.lora_rank).half().cuda()
         elif args.model == 'opt':
-            model = convert_to_lora_module(OPTForCausalLM.from_pretrained(args.pretrain), args.lora_rank).half().cuda()
+            model = OPTForCausalLM.from_pretrained(args.pretrain)
+            model.resize_token_embeddings(len(tokenizer.get_vocab()))
+            model = convert_to_lora_module(model, args.lora_rank).half().cuda()
         elif args.model == 'gpt2':
             model = convert_to_lora_module(GPT2LMHeadModel.from_pretrained(args.pretrain), args.lora_rank).half().cuda()
         elif args.model == 'llama':
@@ -102,6 +104,7 @@ def train(args):
             model = convert_to_lora_module(model, args.lora_rank).half().cuda()
         else:
             raise ValueError(f'Unsupported model "{args.model}"')
+    
     if args.grad_checkpoint:
         model.gradient_checkpointing_enable()
     
@@ -133,14 +136,14 @@ def train(args):
         persona, query, response, cand = create_data("./datasets/convai/train_self_original.txt", args.max_datasets_size)
         train_data = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
         logger.info("Build valid data")
-        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", 32)
         eval_dataset = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
         
         #print(len(train_data['input_ids']))
         #print(train_data['lmlabels'][:3])
         #print(tokenizer.decode(train_data['input_ids'][1]))
-        train_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['lmlabels']))
-        eval_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['lmlabels']))
+        train_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['input_ids']))
+        eval_dataset = PersonaPretrainDataset(torch.Tensor(eval_dataset['input_ids']), torch.Tensor(eval_dataset['input_ids']))
         #print(train_dataset[0:2])
         #print('-'*50)
         
@@ -184,23 +187,23 @@ def train(args):
                                   collate_fn=data_collator,
                                   pin_memory=True)
     print('train_dataloader lenth: ', len(train_dataloader))
-    '''
+    
     for index, data in enumerate(train_dataloader):
         #print(data)
         #print("-"*25)
-        print(data['input_ids'][0])
+        #print(data['input_ids'][0])
         print(tokenizer.decode(data['input_ids'][0]))
         #print(len(data['input_ids']))
         #print(len(data['input_ids'][0]))
         
-        print(data['labels'][0])
+        #print(data['labels'][0])
         print(tokenizer.decode(data['labels'][0]))
         #print(len(data['attention_mask']))
         #print(len(data['attention_mask'][0]))
         print("-"*50)
         if(index > 10):
             break
-    '''
+    
     if eval_dataset is not None:
         eval_dataloader = DataLoader(eval_dataset,
                                      shuffle=(eval_sampler is None),
