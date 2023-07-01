@@ -275,59 +275,21 @@ def PersonaPromptProcess(data_file, max_datasets_size):
 
     return dataset_chosen, dataset_rejected
 
+
 class PersonaPromptDataset(Dataset):
-    def __init__(self, dataset_chosen, dataset_rejected, tokenizer: Callable, max_length: int, special_token=None) -> None:
+    def __init__(self, dataset_chosen, dataset_rejected, dataset_chosen_mask, dataset_rejected_mask, max_length: int = 512, ) -> None:
         super().__init__()
-        self.chosen = []
-        self.reject = []
-        if special_token is None:
-            self.end_token = tokenizer.eos_token
-        else:
-            self.end_token = special_token
-
-        for i, data in tqdm(enumerate(dataset_chosen)):
-            chosen = dataset_chosen[i] + self.end_token
-            # print(chosen)
-            # print("-"*25)
-            chosen_token = tokenizer(chosen,
-                                     max_length=max_length,
-                                     padding="max_length",
-                                     truncation=True,
-                                     return_tensors="pt")
-            self.chosen.append({
-                "input_ids": chosen_token['input_ids'][0],
-                "attention_mask": chosen_token['attention_mask'][0]
-            })
-
-            reject = dataset_rejected[i] + self.end_token
-            # print(reject)
-            # print("-"*50)
-            reject_token = tokenizer(reject,
-                                     max_length=max_length,
-                                     padding="max_length",
-                                     truncation=True,
-                                     return_tensors="pt")
-            self.reject.append({
-                "input_ids": reject_token['input_ids'][0],
-                "attention_mask": reject_token['attention_mask'][0]
-            })
-            
-        #print(self.chosen[:2])
-        #print(tokenizer.batch_decode([self.chosen[0]['input_ids']], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0])
-        #print(self.reject[:2])
-        #print(tokenizer.batch_decode([self.reject[0]['input_ids']], skip_special_tokens=True,  clean_up_tokenization_spaces=False)[0])
-        #print('inputids length: ', len(self.chosen))
-        #print('outputids length: ', len(self.reject))
-        #print(len(self.input_ids[0]))
-        #print(len(self.labels[0]))
-
+        self.chosen = dataset_chosen
+        self.reject = dataset_rejected
+        self.chosen_mask = dataset_chosen_mask
+        self.reject_mask = dataset_rejected_mask
+        
     def __len__(self):
         length = len(self.chosen)
         return length
 
     def __getitem__(self, idx):
-        return self.chosen[idx]["input_ids"], self.chosen[idx]["attention_mask"], self.reject[idx][
-            "input_ids"], self.reject[idx]["attention_mask"]
+        return self.chosen[idx], self.chosen_mask[idx], self.reject[idx], self.reject_mask[idx]
 
 
 class HhRlhfDataset(Dataset):

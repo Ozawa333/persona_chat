@@ -53,7 +53,7 @@ def train(args):
         tokenizer = BloomTokenizerFast.from_pretrained(args.pretrain)
         tokenizer.pad_token = tokenizer.eos_token
     elif args.model == 'opt':
-        tokenizer = AutoTokenizer.from_pretrained("facebook/opt-350m")
+        tokenizer = AutoTokenizer.from_pretrained(args.pretrain)
     elif args.model == 'llama':
         tokenizer = AutoTokenizer.from_pretrained(
             args.pretrain,
@@ -64,9 +64,8 @@ def train(args):
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
     #tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.eos_token = '<\s>'
     tokenizer.bos_token = '<s>'
-    special_tokens_dict = {"sep_token": "<\sep>", "pad_token": "<\pad>"}
+    special_tokens_dict = {"sep_token": "</sep>"}
     tokenizer.add_special_tokens(special_tokens_dict)
     tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
     max_len = args.max_len
@@ -136,7 +135,7 @@ def train(args):
         persona, query, response, cand = create_data("./datasets/convai/train_self_original.txt", args.max_datasets_size)
         train_data = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
         logger.info("Build valid data")
-        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", 32)
+        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
         eval_dataset = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
         
         #print(len(train_data['input_ids']))
@@ -186,16 +185,16 @@ def train(args):
                                   batch_size=args.batch_size,
                                   collate_fn=data_collator,
                                   pin_memory=True)
-    print('train_dataloader lenth: ', len(train_dataloader))
-    
+    print('train_dataloader lenth per gpus: ', len(train_dataloader))
+    '''
     for index, data in enumerate(train_dataloader):
-        #print(data)
+        print(data)
         #print("-"*25)
         #print(data['input_ids'][0])
         print(tokenizer.decode(data['input_ids'][0]))
         #print(len(data['input_ids']))
         #print(len(data['input_ids'][0]))
-        
+        print("-"*25)
         #print(data['labels'][0])
         print(tokenizer.decode(data['labels'][0]))
         #print(len(data['attention_mask']))
@@ -203,7 +202,7 @@ def train(args):
         print("-"*50)
         if(index > 10):
             break
-    
+    '''
     if eval_dataset is not None:
         eval_dataloader = DataLoader(eval_dataset,
                                      shuffle=(eval_sampler is None),
@@ -250,7 +249,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_len', type=int, default=512)
     parser.add_argument('--lora_rank', type=int, default=0, help="low-rank adaptation matrices rank")
     parser.add_argument('--log_interval', type=int, default=100, help="how many steps to log")
-    parser.add_argument('--lr', type=float, default=5e-6)
+    parser.add_argument('--lr', type=float, default=5e-5)
     parser.add_argument('--accumulation_steps', type=int, default=8)
     parser.add_argument('--use_wandb', default=False, action='store_true')
     parser.add_argument('--grad_checkpoint', default=False, action='store_true')

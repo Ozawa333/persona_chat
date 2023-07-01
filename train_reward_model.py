@@ -24,7 +24,8 @@ from transformers import AutoTokenizer, BloomTokenizerFast, DebertaV2Tokenizer, 
 from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
 
 from colossalai.nn.optimizer import HybridAdam
-from dataprocess import HhRlhfDataset, PersonaPromptDataset, create_data, PersonaPromptProcess
+from dataprocess import HhRlhfDataset, PersonaPromptDataset, PersonaPromptProcess
+from build_data_PersonaChat import create_data, build_dataloader_step2
 
 def train(args):
     # configure strategy
@@ -68,7 +69,7 @@ def train(args):
     elif args.model == 'bloom':
         tokenizer = BloomTokenizerFast.from_pretrained('bigscience/bloom-560m')
     elif args.model == 'opt':
-        tokenizer = AutoTokenizer.from_pretrained("facebook/opt-350m")
+        tokenizer = AutoTokenizer.from_pretrained(args.pretrain)
     elif args.model == 'deberta':
         tokenizer = DebertaV2Tokenizer.from_pretrained('microsoft/deberta-v3-large')
     elif args.model == 'llama':
@@ -83,7 +84,14 @@ def train(args):
         tokenizer = prepare_llama_tokenizer_and_embedding(tokenizer, model)
     else:
         tokenizer.pad_token = tokenizer.eos_token
-
+    '''
+    tokenizer.eos_token = '<\s>'
+    tokenizer.bos_token = '<s>'
+    special_tokens_dict = {"sep_token": "<\sep>", "pad_token": "<\pad>"}
+    tokenizer.add_special_tokens(special_tokens_dict)
+    tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
+    max_len = args.max_len
+    '''
     # configure optimizer
     if args.strategy.startswith('colossalai'):
         optim = HybridAdam(model.parameters(), lr=5e-6)
@@ -101,11 +109,14 @@ def train(args):
     # prepare for data and dataset
     if args.dataset == 'PersonaChat':
         
-        train_dataset_chosen, train_dataset_rejected = PersonaPromptProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
-        eval_dataset_chosen, eval_dataset_rejected = PersonaPromptProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
-
-        print("train dataset lenth", len(train_dataset_chosen))
-        print("eval dataset lenth", len(eval_dataset_chosen))
+        persona, query, response, cand = create_data("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        train_dataset = build_dataloader_step2(persona, query, response, cand, tokenizer, max_history=10, n_cand=5, use_all=False)
+        
+        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        valid_dataset = build_dataloader_step2(persona, query, response, cand, tokenizer, max_history=10, n_cand=5, use_all=False)
+        
+        print("train dataset lenth", len(train_dataset))
+        print("eval dataset lenth", len(valid_dataset))
                 
     else:
         if args.subset is not None:
@@ -122,9 +133,17 @@ def train(args):
         valid_data = data['test'].select((randint(0, len(eval_data) - 1) for _ in range(len(eval_data) // 5)))
 
     if args.dataset == 'PersonaChat':
-        train_dataset = PersonaPromptDataset(train_dataset_chosen, train_dataset_rejected, tokenizer, max_len)
-        valid_dataset = PersonaPromptDataset(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
-        eval_dataset = PersonaPromptDataset(eval_dataset_chosen[:10], eval_dataset_rejected[:10], tokenizer, max_len)
+        train_dataset = PersonaPromptDataset(torch.Tensor(train_dataset['input_ids_chosen']), 
+                                             torch.Tensor(train_dataset['input_ids_rejected']),
+                                             torch.Tensor(train_dataset['attention_mask_chosen']),
+                                             torch.Tensor(train_dataset['attention_mask_rejected']),
+                                             max_length = 512)
+        valid_dataset = PersonaPromptDataset(torch.Tensor(valid_dataset['input_ids_chosen']), 
+                                             torch.Tensor(valid_dataset['input_ids_rejected']),
+                                             torch.Tensor(valid_dataset['attention_mask_chosen']),
+                                             torch.Tensor(valid_dataset['attention_mask_rejected']),
+                                             max_length = 512)
+        eval_dataset = valid_dataset
     elif args.dataset == 'Dahoas/rm-static':
         train_dataset = RmStaticDataset(train_data, tokenizer, max_len)
         valid_dataset = RmStaticDataset(valid_data, tokenizer, max_len)
@@ -166,7 +185,25 @@ def train(args):
                                   sampler=train_sampler,
                                   batch_size=args.batch_size,
                                   pin_memory=True)
-
+    '''
+    for index, data in enumerate(train_dataloader):
+        print(data)
+        #print("-"*25)
+        print(data[0][0])
+        print(data[1][0])
+        #print(tokenizer.decode(data[0][0]))
+        #print(len(data['input_ids']))
+        #print(len(data['input_ids'][0]))
+        print("-"*50)
+        print(data[2][0])
+        print(data[3][0])
+        #print(tokenizer.decode(data[2][0]))
+        #print(len(data['attention_mask']))
+        #print(len(data['attention_mask'][0]))
+        print("-"*100)
+        if(index > 10):
+            break
+    '''
     valid_dataloader = DataLoader(valid_dataset,
                                   shuffle=(valid_sampler is None),
                                   sampler=valid_sampler,

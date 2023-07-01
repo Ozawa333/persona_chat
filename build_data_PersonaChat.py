@@ -73,7 +73,6 @@ def create_data(data_file, max_datasets_size):
     return persona, query, response, cand
 
 
-
 def create_encoder_input(per, history, query_id, res_id, latent_id, persona_id, sep_id, eos_id):
     # print(sep_id, "-"*50)
     encoder_input_ids = []
@@ -87,11 +86,14 @@ def create_encoder_input(per, history, query_id, res_id, latent_id, persona_id, 
         if i % 2 == 0:
             encoder_input_ids += [query_id] + history[i] + [eos_id]
         else:
+            #print(encoder_input_ids, [res_id], history[i], [eos_id])
+            #print("-"*50)
             encoder_input_ids += [res_id] + history[i] + [eos_id]
     attention_mask = [1] * len(encoder_input_ids)
     per_attention_mask = [1] * len(per_input_ids)
-
+    
     return encoder_input_ids, attention_mask, per_input_ids, per_attention_mask
+
 
 def create_decoder_input(response_ids, res_id, eos_id, golden=None):
     assert golden != None
@@ -112,10 +114,8 @@ def create_decoder_input(response_ids, res_id, eos_id, golden=None):
 
 
 def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n_cand=5, use_all=False):
-    max_length = 512
     bos_id, eos_id, pad_id, sep_id, query_id, res_id, latent_id, persona_id = get_token_id(tokenizer)
     dataset = defaultdict(list)
-    pad_id_list = [pad_id]*max_length
     for i in range(len(persona)):
         persona_ = persona[i]
         per_list = []
@@ -142,44 +142,23 @@ def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n
                            for text in noise_candidate]
             history.append(query_ids)
             history.append(response_ids)
-            tmp_history = history[-2 * max_history: -1]
 
-            encoder_input_ids, attention_mask, \
-            per_input_ids, per_attention_mask = create_encoder_input(per_list, tmp_history, query_id, res_id,
-                                                                     latent_id, persona_id, sep_id, eos_id)
-            decoder_lmlabel, decoder_input_ids, decoder_cls_idx,\
-                decoder_attention_mask = create_decoder_input(response_ids, res_id, eos_id, golden=True)
-            
-            #print(encoder_input_ids)
-            encoder_input_ids = encoder_input_ids + pad_id_list
-            encoder_input_ids = encoder_input_ids[:max_length]
-            #print(encoder_input_ids)
-            decoder_lmlabel = decoder_lmlabel + pad_id_list
-            decoder_lmlabel = decoder_lmlabel[:max_length]
-            
-            dataset["input_ids"].append(encoder_input_ids)
-            dataset["attention_mask"].append(attention_mask)
-            dataset["per_input_ids"].append(per_input_ids)
-            dataset["per_attention_mask"].append(per_attention_mask)
-            dataset["lmlabels"].append(decoder_lmlabel)
-            dataset["decoder_input_ids"].append(decoder_input_ids)
-            dataset["decoder_attention_mask"].append(decoder_attention_mask)
-            dataset["cls_index"].append(decoder_cls_idx)
-            dataset["clslabel"].append([0])
-            if use_all:
-                for k in range(len(noise_cand_ids_list)):
-                    decoder_lmlabel, decoder_input_ids, decoder_cls_idx,\
-                        decoder_attention_mask = create_decoder_input(noise_cand_ids_list[k], res_id, eos_id, golden=False)
-                    dataset["input_ids"].append(encoder_input_ids)
-                    dataset["attention_mask"].append(attention_mask)
-                    dataset["per_input_ids"].append(per_input_ids)
-                    dataset["per_attention_mask"].append(per_attention_mask)
-                    dataset["lmlabels"].append(decoder_lmlabel)
-                    dataset["decoder_input_ids"].append(decoder_input_ids)
-                    dataset["decoder_attention_mask"].append(decoder_attention_mask)
-                    dataset["cls_index"].append(decoder_cls_idx)
-            else:
-                continue
+            tmp_history = history[-2 * max_history:]
+
+        encoder_input_ids, attention_mask, per_input_ids, per_attention_mask = create_encoder_input(per_list, tmp_history, query_id, res_id,
+                                                                                                     latent_id, persona_id, sep_id, eos_id)
+        decoder_lmlabel, decoder_input_ids, decoder_cls_idx, decoder_attention_mask = create_decoder_input(response_ids, res_id, eos_id, golden=True)
+
+
+        dataset["input_ids"].append(encoder_input_ids)
+        dataset["attention_mask"].append(attention_mask)
+        dataset["per_input_ids"].append(per_input_ids)
+        dataset["per_attention_mask"].append(per_attention_mask)
+        dataset["lmlabels"].append(decoder_lmlabel)
+        dataset["decoder_input_ids"].append(decoder_input_ids)
+        dataset["decoder_attention_mask"].append(decoder_attention_mask)
+        dataset["cls_index"].append(decoder_cls_idx)
+        dataset["clslabel"].append([0])
             
     for item_name, item in dataset.items():
         if item_name == "input_ids" or item_name == "per_input_ids":
@@ -208,6 +187,67 @@ def build_dataloader(persona, query, response, cand, tokenizer, max_history=4, n
 
     return dataset
 
+
+def build_dataloader_step2(persona, query, response, cand, tokenizer, max_history=4, n_cand=5, use_all=False):
+    bos_id, eos_id, pad_id, sep_id, query_id, res_id, latent_id, persona_id = get_token_id(tokenizer)
+    dataset = defaultdict(list)
+    for i in range(len(persona)):
+        persona_ = persona[i]
+        per_list = []
+        for per in persona_:
+            persona_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(per))
+            per_list.append(persona_ids)
+        query_ = query[i]
+        response_ = response[i]
+        cand_ = cand[i]
+        history = []
+        assert len(query_) == len(response_)
+        for j in range(len(query_)):
+            if use_all:
+                noise_candidate = cand_[j][:-1]
+                #print("return cand")
+            else:
+                noise_candidate = random.sample(cand_[j][:-1], n_cand-1)
+                #print("return answer")
+
+            query_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(query_[j]))
+            response_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(response_[j]))
+
+            noise_cand_ids_list = [tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+                           for text in noise_candidate]
+            history.append(query_ids)
+            history.append(response_ids)
+            
+            for k in range(len(noise_cand_ids_list)):
+                tmp_history = history[-2 * max_history:-1] + [noise_cand_ids_list[k]]
+                #print(tmp_history)
+                encoder_input_ids_chosen, attention_mask_chosen, _, _ = create_encoder_input(per_list, tmp_history, query_id, res_id,
+                                                                                                             latent_id, persona_id, sep_id, eos_id)
+
+                tmp_history = history[-2 * max_history:]
+                encoder_input_ids_rejected, attention_mask_rejected, _, _ = create_encoder_input(per_list, tmp_history, query_id, res_id,
+                                                                                                             latent_id, persona_id, sep_id, eos_id)
+
+        dataset["input_ids_chosen"].append(encoder_input_ids_chosen)
+        dataset["attention_mask_chosen"].append(attention_mask_chosen)
+        
+        dataset["input_ids_rejected"].append(encoder_input_ids_rejected)
+        dataset["attention_mask_rejected"].append(attention_mask_rejected)
+
+            
+    for item_name, item in dataset.items():
+        if item_name == "input_ids_rejected" or item_name == "input_ids_chosen":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                              batch_first=True, padding_value=pad_id)
+
+            dataset[item_name] = item
+
+        elif item_name == "attention_mask_rejected" or item_name == "attention_mask_chosen":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+
+    return dataset
 
 
 def build_infer_dataset(tokenizer, file_path):

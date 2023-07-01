@@ -76,7 +76,7 @@ class TransformerAgent(Agent):
             
             self.tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
             #LlamaForCausalLM OPTForCausalLM
-            self.model_checkpoint = OPTForCausalLM.from_pretrained('facebook/opt-350m')
+            self.model_checkpoint = OPTForCausalLM.from_pretrained(args.model_checkpoint)
             self.model_checkpoint.resize_token_embeddings(len(self.tokenizer.get_vocab()))
         '''
         else:
