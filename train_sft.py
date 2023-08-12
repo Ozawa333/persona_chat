@@ -26,6 +26,7 @@ from colossalai.tensor import ColoParameter
 
 from dataprocess import PersonaPretrainProcess, PersonaPretrainDataset
 from build_data_PersonaChat import create_data, build_dataloader
+from build_dstc import create_data_dstc, build_dataloader_dstc
 
 def train(args):
     # configure strategy
@@ -51,46 +52,40 @@ def train(args):
         tokenizer.pad_token = tokenizer.eos_token
     elif args.model == 'bloom':
         tokenizer = BloomTokenizerFast.from_pretrained(args.pretrain)
-        tokenizer.pad_token = tokenizer.eos_token
+        special_tokens_dict = {"sep_token": "</sep>"}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
     elif args.model == 'opt':
         tokenizer = AutoTokenizer.from_pretrained(args.pretrain)
+        if tokenizer.sep_token_id == None:
+            tokenizer.bos_token = '<s>'
+            special_tokens_dict = {"sep_token": "</sep>"}
+            tokenizer.add_special_tokens(special_tokens_dict)
+            tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
+        
     elif args.model == 'llama':
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.pretrain,
-            padding_side="right",
-            use_fast=False,
-        )
-
+        tokenizer = AutoTokenizer.from_pretrained(args.pretrain)
+        
+        if tokenizer.sep_token_id == None:
+            tokenizer.bos_token = '<s>'
+            tokenizer.eos_token = '</s>'
+            special_tokens_dict = {"sep_token": "</sep>", "pad_token": "<pad>"}
+            tokenizer.add_special_tokens(special_tokens_dict)
+            tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
+        
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
     #tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.bos_token = '<s>'
-    special_tokens_dict = {"sep_token": "</sep>"}
-    tokenizer.add_special_tokens(special_tokens_dict)
-    tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
     max_len = args.max_len
-    '''
-    if args.model == 'llama':
-        tokenizer = prepare_llama_tokenizer_and_embedding(tokenizer, model)
 
-        if args.strategy == 'colossalai_gemini':
-            # this is a hack to deal with the resized embedding
-            # to make sure all parameters are ColoParameter for Colossal-AI Gemini Compatibility
-            for name, param in model.named_parameters():
-                if not isinstance(param, ColoParameter):
-                    sub_module_name = '.'.join(name.split('.')[:-1])
-                    weight_name = name.split('.')[-1]
-                    sub_module = model.get_submodule(sub_module_name)
-                    setattr(sub_module, weight_name, ColoParameter(param))
-    else:
-        tokenizer.pad_token = tokenizer.eos_token
-    '''
     
     # configure model
     with strategy.model_init_context():
         if args.model == 'bloom':
-            model = convert_to_lora_module(BloomForCausalLM.from_pretrained(args.pretrain),
-                                           args.lora_rank).half().cuda()
+            model = BloomForCausalLM.from_pretrained(args.pretrain)
+            model.resize_token_embeddings(len(tokenizer.get_vocab()))
+            model = convert_to_lora_module(model, args.lora_rank).half().cuda()
+
         elif args.model == 'opt':
             model = OPTForCausalLM.from_pretrained(args.pretrain)
             model.resize_token_embeddings(len(tokenizer.get_vocab()))
@@ -118,29 +113,45 @@ def train(args):
 
     # configure dataset
     if args.dataset == 'PersonaChat':
-        '''
-        print("Build dataset")
+        print('-'*50)
+        print(args.revised)
+        if args.revised:
+            datatype = 'revised'
+            print("use revised dataset")
+        else:
+            datatype = 'original'
+            print("use oringinal dataset")
         
-        train_inputs, train_outputs = PersonaPretrainProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
-        eval_inputs, eval_outputs = PersonaPretrainProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
-        
-        train_dataset = PersonaPretrainDataset(train_inputs, train_outputs, tokenizer, max_len)
-        eval_dataset = PersonaPretrainDataset(eval_inputs, eval_outputs, tokenizer, max_len)
-        
-        #print("train dataset lenth: ", len(train_dataset))
-        #print("eval dataset lenth: ", len(eval_dataset))
-        #print(train_dataset[:2])
-        '''
         logger.info("Build train data")
-        persona, query, response, cand = create_data("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        persona, query, response, cand = create_data("./datasets/convai/train_self_"+datatype+".txt", args.max_datasets_size)
         train_data = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
         logger.info("Build valid data")
-        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        persona, query, response, cand = create_data("./datasets/convai/valid_self_"+datatype+".txt", args.max_datasets_size)
         eval_dataset = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
         
+        #print('-'*50)
         #print(len(train_data['input_ids']))
-        #print(train_data['lmlabels'][:3])
-        #print(tokenizer.decode(train_data['input_ids'][1]))
+        #print(train_data['input_ids'][:10])
+        #for i in range(20):
+        #    print(tokenizer.decode(train_data['input_ids'][i]))
+        train_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['input_ids']))
+        eval_dataset = PersonaPretrainDataset(torch.Tensor(eval_dataset['input_ids']), torch.Tensor(eval_dataset['input_ids']))
+        #print(train_dataset[0:2])
+        #print('-'*50)
+        
+    elif args.dataset == 'dstc':
+        logger.info("Build train data")
+        persona, query, response = create_data_dstc("./datasets/dstc/train_set4DSTC7-AVSD.json", args.max_datasets_size)
+        train_data = build_dataloader_dstc(persona, query, response, tokenizer, max_query=10)
+        logger.info("Build valid data")
+        persona, query, response = create_data_dstc("./datasets/dstc/valid_set4DSTC7-AVSD.json", args.max_datasets_size)
+        eval_dataset = build_dataloader_dstc(persona, query, response, tokenizer, max_query=10)
+        
+        #print('-'*50)
+        #print(len(train_data['input_ids']))
+        #print(train_data['input_ids'][:10])
+        #for i in range(20):
+        #    print(tokenizer.decode(train_data['input_ids'][i]))
         train_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['input_ids']))
         eval_dataset = PersonaPretrainDataset(torch.Tensor(eval_dataset['input_ids']), torch.Tensor(eval_dataset['input_ids']))
         #print(train_dataset[0:2])
@@ -254,5 +265,6 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', default=False, action='store_true')
     parser.add_argument('--grad_checkpoint', default=False, action='store_true')
     parser.add_argument('--test', default=False, help="use samll dataset[:128]")
+    parser.add_argument('--revised', action='store_true', default=False, help='use revised')
     args = parser.parse_args()
     train(args)

@@ -84,6 +84,25 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
 
 
 """Prompt"""
+    
+class PersonaPretrainDatasetStep3(Dataset):
+    def __init__(self, input_ids, labels, attention_mask):
+        super(PersonaPretrainDatasetStep3, self).__init__()
+        self.input_ids = input_ids
+        self.labels = labels
+        self.attention_mask = attention_mask
+        #print("-"*50)
+        #print(self.input_ids[0])
+        #print(self.labels_ids[0])
+        #print("-"*50)
+        
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, idx):
+        return dict(input_ids=self.input_ids[idx], labels=self.labels[idx])
+
+
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -110,8 +129,8 @@ class SupervisedDataset(Dataset):
 
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]
-        #print(self.input_ids[:2])
-        #print(self.labels[:2])
+        #print(self.input_ids[0])
+        #print(self.labels[0])
         #print("-"*50)
         
     def __len__(self):
@@ -140,41 +159,17 @@ def PersonaPromptOnlyProcess(data_file, max_datasets_size):
     #print(len(dataset_prompt))
     return dataset_prompt
 
-class PersonaPromptOnlyDataset(Dataset):
-    
-    def __init__(self,
-                 data_path: str,
-                 tokenizer: transformers.PreTrainedTokenizer,
-                 max_datasets_size: int = None,
-                 max_length: int = 96):
+class PersonaPromptOnlyDataset(Dataset):        
+    def __init__(self, input_ids, attention_mask):
         super(PersonaPromptOnlyDataset, self).__init__()
-        self.keyed_prompt = defaultdict(list)
-        logger.info("Loading data...")
-        list_data_dict = PersonaPromptOnlyProcess(data_path, max_datasets_size)
-        logger.info(f"Loaded {len(list_data_dict)} examples.")
-
-        if max_datasets_size is not None:
-            logger.info(f"Limiting dataset to {max_datasets_size} examples.")
-            list_data_dict = list_data_dict[:max_datasets_size]
-        # print('-'*50, len(list_data_dict))
-        for data_dict in tqdm(list_data_dict):
-            #print(data_dict)
-            #print(type(data_dict))
-            #print("-"*50)
-            token = tokenizer(data_dict,
-                              return_tensors='pt',
-                              max_length=max_length,
-                              padding='max_length',
-                              truncation=True)
-            for k, tensor in token.items():
-                self.keyed_prompt[k].extend(tensor.to(torch.cuda.current_device()).unbind())
+        self.input_ids = input_ids.to(torch.cuda.current_device())
+        self.attention_mask = attention_mask.to(torch.cuda.current_device())
 
     def __len__(self):
-        return len(self.keyed_prompt["input_ids"])
+        return len(self.input_ids)
 
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return {k: v[i] for k, v in self.keyed_prompt.items()}
-
+    def __getitem__(self, idx):
+        return dict(input_ids=self.input_ids[idx], attention_mask=self.attention_mask[idx])
     
 
 class PromptDataset(Dataset):
@@ -213,43 +208,6 @@ class PromptDataset(Dataset):
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         return {k: v[i] for k, v in self.keyed_prompt.items()}
-
-
-class SupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
-
-    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, max_datasets_size: int = None, max_length: int = 512):
-        super(SupervisedDataset, self).__init__()
-        logger.info("Loading data...")
-        list_data_dict = jload(data_path)
-        logger.info(f"Loaded {len(list_data_dict)} examples.")
-        print(list_data_dict[:2])
-        if max_datasets_size is not None:
-            logger.info(f"Limiting dataset to {max_datasets_size} examples.")
-            list_data_dict = list_data_dict[:max_datasets_size]
-
-        logger.info("Formatting inputs...")
-        prompt_input, prompt_no_input = PROMPT_DICT["prompt_input"], PROMPT_DICT["prompt_no_input"]
-        sources = [
-            prompt_input.format_map(example) if example.get("input", "") != "" else prompt_no_input.format_map(example)
-            for example in list_data_dict
-        ]
-        targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
-
-        logger.info("Tokenizing inputs... This may take some time...")
-        data_dict = preprocess(sources, targets, tokenizer, max_length)
-
-        self.input_ids = data_dict["input_ids"]
-        self.labels = data_dict["labels"]
-        #print(self.input_ids[:2])
-        #print(self.labels[:2])
-        #print("-"*50)
-        
-    def __len__(self):
-        return len(self.input_ids)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
 
 """reward"""

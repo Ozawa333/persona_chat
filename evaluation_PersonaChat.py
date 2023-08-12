@@ -13,9 +13,12 @@ from model.modeling_bart import LMEDRModel
 from utils import AttrDict
 #from eval_PersonaChat_build import  create_encoder_input, create_decoder_input, pad_dataset
 
-from transformers import AutoTokenizer, LlamaForCausalLM, OPTForCausalLM
+from transformers import AutoTokenizer, LlamaForCausalLM, OPTForCausalLM, BloomForCausalLM, LlamaForSequenceClassification
 #from transformers.models.opt.modeling_opt import OPTForCausalLM
 from build_data_PersonaChat import create_encoder_input, create_decoder_input, pad_dataset
+from coati.models import convert_to_lora_module
+import os 
+os.environ['CUDA_VISIBLE_DEVICES'] = '2' 
 
 class TransformerAgent(Agent):
     @staticmethod
@@ -35,6 +38,8 @@ class TransformerAgent(Agent):
         agent_args.add_argument("--beam", type=int, default=1)
         agent_args.add_argument("--top_p", type=float, default=0.9, help="Nucleus filtering (top-p) before sampling (<=0.0: no filtering)")
         agent_args.add_argument('--revised', action='store_true', default=False, help='use revised')
+        #agent_args.add_argument('--model', type=str, default="")
+        #agent_args.add_argument('--lora_rank', type=int, default=None)
         return argparser
 
     def __init__(self, opt, shared=None):
@@ -55,29 +60,24 @@ class TransformerAgent(Agent):
         
         
         if args.model_checkpoint == 'persona_original' :
-            self.tokenizer = BartTokenizer.from_pretrained(args.model_checkpoint, add_prefix_space=True)
+            self.tokenizer = BartTokenizer.from_pretrained(args.model_checkpoint)
             self.model_checkpoint = LMEDRModel.from_pretrained(args.model_checkpoint)
 
             self.logger.info("Build BPE prefix dictionary")
         
         else:
             #args.model_checkpoint == './checkpoint/step1/epoch5':
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                'facebook/opt-350m',
-                padding_side="right",
-                use_fast=False,
-                #'./checkpoint/llama_7B' facebook/opt-350m
-            )
+            self.tokenizer = AutoTokenizer.from_pretrained(args.model_checkpoint)
+
+            #self.model_checkpoint = convert_to_lora_module(LlamaForCausalLM.from_pretrained(args.model_checkpoint), 16).half()
+            #self.model_checkpoint = BloomForCausalLM.from_pretrained(args.model_checkpoint)
+            #self.model_checkpoint = OPTForCausalLM.from_pretrained(args.model_checkpoint)
             
-            self.tokenizer.eos_token = '<\s>'
-            self.tokenizer.bos_token = '<s>'
-            self.special_tokens_dict = {"sep_token": "<\sep>", "pad_token": "<\pad>"}
-            self.tokenizer.add_special_tokens(self.special_tokens_dict)
-            
-            self.tokenizer.add_tokens(['<query>', '<response>', '<latent>', '<persona>'])
-            #LlamaForCausalLM OPTForCausalLM
-            self.model_checkpoint = OPTForCausalLM.from_pretrained(args.model_checkpoint)
-            self.model_checkpoint.resize_token_embeddings(len(self.tokenizer.get_vocab()))
+            self.model_checkpoint = LlamaForCausalLM.from_pretrained(args.model_checkpoint)
+            #state_dict = torch.load('./checkpoint_opt1.3Biml/step3/epoch51/rmpersona.pt', map_location='cpu')
+            #self.model_checkpoint.load_state_dict(state_dict, strict=False)
+            #reward_model.to(torch.float16).to(torch.cuda.current_device())
+                        
         '''
         else:
             self.model_checkpoint = shared['model']
@@ -164,7 +164,7 @@ class TransformerAgent(Agent):
             #for input_name in ["input_ids", "attention_mask"]:
                 tensor = torch.tensor(inputs[input_name], device=self.args.device if self.args.gpu ==0 else self.args.gpu)
                 tensor = tensor.view((-1, len(self.candidates)) + tensor.shape[1:])
-                tensor_inputs[input_name] = tensor[0]
+                tensor_inputs[input_name] = tensor
 
             self.model_checkpoint.eval()
             with torch.no_grad():
@@ -172,14 +172,20 @@ class TransformerAgent(Agent):
                 #print(tensor_inputs)
                 #print('-'*50)
                 #print(**tensor_inputs)
-                mc_logits = self.model_checkpoint(**tensor_inputs).logits[0]
-                #mc_logits = self.model_checkpoint(**tensor_inputs).logits[]
+                #print(tensor_inputs['input_ids'])
+                print("-"*50)
+                mc_logits = self.model_checkpoint(input_ids=tensor_inputs['input_ids'][0], attention_mask=tensor_inputs['attention_mask'][0]).logits[1]
+                #mc_logits = self.model_checkpoint(**tensor_inputs).logits[1]
                 print(mc_logits)
                 print(len(mc_logits))
                 print(len(mc_logits[0]))
-
+            
             val, ind = torch.sort(mc_logits.view(1, -1)[0], descending=True)
-
+            #print(val)
+            #print(ind)
+            #print(self.candidates[ind[0].item()])
+            print('-'*50)
+            
             ypred = self.candidates[ind[0].item()][1] # match
             tc = []
             for j in range(len(self.candidates)):
@@ -196,16 +202,19 @@ class TransformerAgent(Agent):
             self.model_checkpoint.eval()
             with torch.no_grad():
                 '''
+                #if args.model_checkpoint == 'persona_original' :
                 out_ids = self.model_checkpoint.generate(input_ids=tensor_input_ids,
                                                          attention_mask=tensor_attention_mask,
                                                          per_input_ids=tensor_per_input_ids,
                                                          per_attention_mask=tensor_per_attention_mask,
-                                        max_length=self.args.max_length, num_beams=self.args.beam)
-            out_text = self.tokenizer.batch_decode(out_ids, skip_special_tokens=True,
+                                                        max_length=self.args.max_length, num_beams=self.args.beam)
+                out_text = self.tokenizer.batch_decode(out_ids, skip_special_tokens=True,
                                                    spaces_between_special_tokens=False,
                                                    clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
-            '''
-
+                #else:
+                '''
+                #print(tensor_input_ids)
+                #print("-"*50)
                 out_ids = self.model_checkpoint.generate(input_ids=tensor_input_ids,
                                                          attention_mask=tensor_attention_mask,
                                                         max_length=self.args.max_length,
@@ -213,12 +222,17 @@ class TransformerAgent(Agent):
                                                         top_p=self.args.top_p,
                                                         num_return_sequences=1,
                                                         num_beams=self.args.beam)
-                    
-            out_text = self.tokenizer.batch_decode([out_ids[0][len(tensor_input_ids[0]):]], 
-                                                    skip_special_tokens=True,
-                                                    spaces_between_special_tokens=False,
-                                                    clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
-
+                '''
+                out_text = self.tokenizer.batch_decode([out_ids[0][len(tensor_input_ids[0])+1:]], 
+                                                        skip_special_tokens=True,
+                                                        spaces_between_special_tokens=False,
+                                                        clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
+                '''
+                out_text = self.tokenizer.batch_decode([out_ids[0][len(tensor_input_ids[0])+1:]], 
+                                                        skip_special_tokens=True,
+                                                        spaces_between_special_tokens=False,
+                                                        clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
+            print(out_text)
             #print(tensor_input_ids)
             #print('-'*25)
             #print([out_ids[0][len(tensor_input_ids[0]):]])
@@ -230,6 +244,7 @@ class TransformerAgent(Agent):
             #print('-'*100)
             
             ans = out_text[0].strip()
+            # print(ans)
             reply = {'text': ans}
         
         return reply

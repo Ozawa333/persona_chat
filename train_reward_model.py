@@ -27,6 +27,9 @@ from colossalai.nn.optimizer import HybridAdam
 from dataprocess import HhRlhfDataset, PersonaPromptDataset, PersonaPromptProcess
 from build_data_PersonaChat import create_data, build_dataloader_step2
 
+
+'''step', 'loss', 'dist', 'acc'''
+
 def train(args):
     # configure strategy
     if args.strategy == 'naive':
@@ -79,12 +82,12 @@ def train(args):
     else:
         raise ValueError(f'Unsupported model "{args.model}"')
     max_len = args.max_len
-
+    '''
     if args.model == 'llama':
         tokenizer = prepare_llama_tokenizer_and_embedding(tokenizer, model)
     else:
         tokenizer.pad_token = tokenizer.eos_token
-    '''
+    
     tokenizer.eos_token = '<\s>'
     tokenizer.bos_token = '<s>'
     special_tokens_dict = {"sep_token": "<\sep>", "pad_token": "<\pad>"}
@@ -109,10 +112,10 @@ def train(args):
     # prepare for data and dataset
     if args.dataset == 'PersonaChat':
         
-        persona, query, response, cand = create_data("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        persona, query, response, cand = create_data("./datasets/convai/train_self_revised.txt", args.max_datasets_size)
         train_dataset = build_dataloader_step2(persona, query, response, cand, tokenizer, max_history=10, n_cand=5, use_all=False)
         
-        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        persona, query, response, cand = create_data("./datasets/convai/valid_self_revised.txt", args.max_datasets_size)
         valid_dataset = build_dataloader_step2(persona, query, response, cand, tokenizer, max_history=10, n_cand=5, use_all=False)
         
         print("train dataset lenth", len(train_dataset))
@@ -187,7 +190,7 @@ def train(args):
                                   pin_memory=True)
     '''
     for index, data in enumerate(train_dataloader):
-        print(data)
+        #print(data)
         #print("-"*25)
         print(data[0][0])
         print(data[1][0])
@@ -201,8 +204,10 @@ def train(args):
         #print(len(data['attention_mask']))
         #print(len(data['attention_mask'][0]))
         print("-"*100)
-        if(index > 10):
-            break
+        #if(index > 1):
+        #break
+    print(len(train_dataloader))
+    print(index)
     '''
     valid_dataloader = DataLoader(valid_dataset,
                                   shuffle=(valid_sampler is None),

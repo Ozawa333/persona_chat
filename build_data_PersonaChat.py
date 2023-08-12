@@ -234,6 +234,96 @@ def build_dataloader_step2(persona, query, response, cand, tokenizer, max_histor
         dataset["input_ids_rejected"].append(encoder_input_ids_rejected)
         dataset["attention_mask_rejected"].append(attention_mask_rejected)
 
+        
+    for item_name, item in dataset.items():
+        if item_name == "input_ids_rejected" or item_name == "input_ids_chosen":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                              batch_first=True, padding_value=pad_id)
+
+            dataset[item_name] = item
+
+        elif item_name == "attention_mask_rejected" or item_name == "attention_mask_chosen":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+
+    return dataset
+        
+        
+def build_dataloader_step3_prompt(persona, query, response, cand, tokenizer, max_history=4, n_cand=5, use_all=False):
+    bos_id, eos_id, pad_id, sep_id, query_id, res_id, latent_id, persona_id = get_token_id(tokenizer)
+    dataset = defaultdict(list)
+    for i in range(len(persona)):
+        persona_ = persona[i]
+        per_list = []
+        for per in persona_:
+            persona_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(per))
+            per_list.append(persona_ids)
+        query_ = query[i]
+        response_ = response[i]
+        cand_ = cand[i]
+        history = []
+        assert len(query_) == len(response_)
+        for j in range(len(query_)):
+            if use_all:
+                noise_candidate = cand_[j][:-1]
+                #print("return cand")
+            else:
+                noise_candidate = random.sample(cand_[j][:-1], n_cand-1)
+                #print("return answer")
+
+            query_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(query_[j]))
+            response_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(response_[j]))
+
+            noise_cand_ids_list = [tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+                           for text in noise_candidate]
+            history.append(query_ids)
+            history.append(response_ids)
+
+            tmp_history = history[-2 * max_history:-1]
+
+            encoder_input_ids, attention_mask, per_input_ids, per_attention_mask = create_encoder_input(per_list, tmp_history, query_id, res_id,
+                                                                                                         latent_id, persona_id, sep_id, eos_id)
+            decoder_lmlabel, decoder_input_ids, decoder_cls_idx, decoder_attention_mask = create_decoder_input(response_ids, res_id, eos_id, golden=True)
+
+
+        dataset["input_ids"].append(encoder_input_ids)
+        dataset["attention_mask"].append(attention_mask)
+        dataset["per_input_ids"].append(per_input_ids)
+        dataset["per_attention_mask"].append(per_attention_mask)
+        dataset["lmlabels"].append(decoder_lmlabel)
+        dataset["decoder_input_ids"].append(decoder_input_ids)
+        dataset["decoder_attention_mask"].append(decoder_attention_mask)
+        dataset["cls_index"].append(decoder_cls_idx)
+        dataset["clslabel"].append([0])
+            
+    for item_name, item in dataset.items():
+        if item_name == "input_ids" or item_name == "per_input_ids":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                              batch_first=True, padding_value=pad_id)
+
+            dataset[item_name] = item
+        elif item_name == "lmlabels":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "attention_mask" or item_name == "decoder_attention_mask" or item_name == "per_attention_mask":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "decoder_input_ids":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "clslabel":
+            dataset[item_name] = torch.tensor(item).view(-1,1)
+        elif item_name == "cls_index":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+
+    return dataset
+        
             
     for item_name, item in dataset.items():
         if item_name == "input_ids_rejected" or item_name == "input_ids_chosen":
@@ -243,6 +333,83 @@ def build_dataloader_step2(persona, query, response, cand, tokenizer, max_histor
             dataset[item_name] = item
 
         elif item_name == "attention_mask_rejected" or item_name == "attention_mask_chosen":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+
+    return dataset
+
+
+def build_dataloader_step3_pertrain(persona, query, response, cand, tokenizer, max_history=4, n_cand=5, use_all=False):
+    bos_id, eos_id, pad_id, sep_id, query_id, res_id, latent_id, persona_id = get_token_id(tokenizer)
+    dataset = defaultdict(list)
+    for i in range(len(persona)):
+        persona_ = persona[i]
+        per_list = []
+        for per in persona_:
+            persona_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(per))
+            per_list.append(persona_ids)
+        query_ = query[i]
+        response_ = response[i]
+        cand_ = cand[i]
+        history = []
+        assert len(query_) == len(response_)
+        for j in range(len(query_)):
+            if use_all:
+                noise_candidate = cand_[j][:-1]
+                #print("return cand")
+            else:
+                noise_candidate = random.sample(cand_[j][:-1], n_cand-1)
+                #print("return answer")
+
+            query_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(query_[j]))
+            response_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(response_[j]))
+
+            noise_cand_ids_list = [tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+                           for text in noise_candidate]
+            history.append(query_ids)
+            history.append(response_ids)
+
+            tmp_history = history[-2 * max_history:]
+
+        encoder_input_ids, attention_mask, per_input_ids, per_attention_mask = create_encoder_input(per_list, tmp_history, query_id, res_id,
+                                                                                                     latent_id, persona_id, sep_id, eos_id)
+        decoder_lmlabel, decoder_input_ids, decoder_cls_idx, decoder_attention_mask = create_decoder_input(response_ids, res_id, eos_id, golden=True)
+
+        per_input_ids = [pad_id]*len(encoder_input_ids)
+        per_input_ids = per_input_ids[:len(encoder_input_ids)-len(decoder_lmlabel)] + decoder_lmlabel
+
+        dataset["input_ids"].append(encoder_input_ids)
+        dataset["attention_mask"].append(attention_mask)
+        dataset["per_input_ids"].append(per_input_ids)
+        dataset["per_attention_mask"].append(per_attention_mask)
+        dataset["lmlabels"].append(decoder_lmlabel)
+        dataset["decoder_input_ids"].append(decoder_input_ids)
+        dataset["decoder_attention_mask"].append(decoder_attention_mask)
+        dataset["cls_index"].append(decoder_cls_idx)
+        dataset["clslabel"].append([0])
+            
+    for item_name, item in dataset.items():
+        if item_name == "input_ids" or item_name == "per_input_ids":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                              batch_first=True, padding_value=pad_id)
+
+            dataset[item_name] = item
+        elif item_name == "lmlabels":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "attention_mask" or item_name == "decoder_attention_mask" or item_name == "per_attention_mask":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "decoder_input_ids":
+            item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
+                                batch_first=True, padding_value=pad_id)
+            dataset[item_name] = item
+        elif item_name == "clslabel":
+            dataset[item_name] = torch.tensor(item).view(-1,1)
+        elif item_name == "cls_index":
             item = pad_sequence([torch.from_numpy(np.array(x)) for x in item],
                                 batch_first=True, padding_value=pad_id)
             dataset[item_name] = item

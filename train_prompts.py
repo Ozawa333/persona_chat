@@ -3,7 +3,7 @@ import argparse
 import pandas as pd
 import torch
 import torch.distributed as dist
-from coati.dataset import DataCollatorForSupervisedDataset
+from coati.dataset import DataCollatorForSupervisedDataset, PromptDataset, SupervisedDataset
 from coati.models.bloom import BLOOMRM, BLOOMActor, BLOOMCritic
 from coati.models.gpt import GPTRM, GPTActor, GPTCritic
 from coati.models.llama import LlamaActor, LlamaCritic, LlamaRM
@@ -25,7 +25,8 @@ from tqdm import tqdm
 import itertools
 import random
 
-from dataprocess import PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset, SupervisedDataset, PromptDataset
+from dataprocess import PersonaPromptOnlyDataset, create_data, PersonaPretrainProcess, PersonaPretrainDataset, PersonaPretrainDatasetStep3
+from build_data_PersonaChat import build_dataloader_step3_prompt, build_dataloader_step3_pertrain
 
 def main(args):
     # configure strategy
@@ -149,9 +150,20 @@ def main(args):
     
     if(args.prompt_dataset == 'PersonaChat'):
         print("Build dataset")
-
+        '''
+        logger.info("Build train data")
+        persona, query, response, cand = create_data("./datasets/convai/train_self_original.txt", args.max_datasets_size)
+        train_data = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
+        train_dataset = PersonaPretrainDataset(torch.Tensor(train_data['input_ids']), torch.Tensor(train_data['input_ids']))
+        logger.info("Build valid data")
+        persona, query, response, cand = create_data("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
+        eval_dataset = build_dataloader(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
+        '''
         #prompt dataset
-        prompt_dataset = PersonaPromptOnlyDataset(tokenizer=tokenizer, data_path="./datasets/convai/train_self_original.txt", max_datasets_size=args.max_datasets_size, max_length = args.max_input_len)
+        persona, query, response, cand = create_data("./datasets/convai/train_self_revised.txt", args.max_datasets_size)
+        prompt_dataset = build_dataloader_step3_prompt(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
+        
+        prompt_dataset = PersonaPromptOnlyDataset(torch.Tensor(prompt_dataset['input_ids']), torch.Tensor(prompt_dataset['attention_mask']))
         if dist.is_initialized() and dist.get_world_size() > 1:
             prompt_sampler = DistributedSampler(prompt_dataset, shuffle=True, seed=42, drop_last=True)
         else:
@@ -160,25 +172,16 @@ def main(args):
                                        shuffle=(prompt_sampler is None),
                                        sampler=prompt_sampler,
                                        batch_size=args.experience_batch_size)
-        print('prompt_dataloader', len(prompt_dataloader))
-        #for index, data in enumerate(prompt_dataloader):
-            #print(data)
-            #print(len(data['input_ids']))
-            #print(len(data['input_ids'][0]))
-            #print(len(data['attention_mask']))
-            #print(len(data['attention_mask'][0]))
-            #if(index > 1):
-            #    break
-
-        #pretrain dataset
-        train_inputs, train_outputs = PersonaPretrainProcess("./datasets/convai/train_self_original.txt", args.max_datasets_size)
-        # eval_inputs, eval_outputs = PersonaPretrainProcess("./datasets/convai/valid_self_original.txt", args.max_datasets_size)
-
-        print("train dataset lenth: ", len(train_inputs))
-        # print("eval dataset lenth: ", len(eval_inputs))
+        print('prompt_dataloader len:', len(prompt_dataloader))
         
-        pretrain_dataset = PersonaPretrainDataset(train_inputs, train_outputs, tokenizer, max_length = args.max_input_len)
-        # eval_dataset = PersonaPretrainDataset(eval_inputs, eval_outputs, tokenizer, max_len)
+        
+        #pretrain dataset
+        persona, query, response, cand = create_data("./datasets/convai/train_self_revised.txt", args.max_datasets_size)
+        pretrain_dataset = build_dataloader_step3_pertrain(persona, query, response, cand, tokenizer, max_history=10, use_all=False)
+        
+        pretrain_dataset = PersonaPretrainDatasetStep3(torch.Tensor(pretrain_dataset['input_ids']), 
+                                                     torch.Tensor(pretrain_dataset['per_input_ids']),
+                                                     torch.Tensor(pretrain_dataset['attention_mask']))
         
         if dist.is_initialized() and dist.get_world_size() > 1:
             pretrain_sampler = DistributedSampler(pretrain_dataset, shuffle=True, seed=42, drop_last=True)
@@ -190,14 +193,8 @@ def main(args):
                                          batch_size=args.ptx_batch_size,
                                          collate_fn=data_collator)
         print('pretrain_dataloader', len(pretrain_dataloader))
-        #for index, data in enumerate(pretrain_dataloader):
-            #print(data)
-            #print(len(data['input_ids']))
-            #print(len(data['input_ids'][0]))
-            #print(len(data['attention_mask']))
-            #print(len(data['attention_mask'][0]))
-            #if(index > 1):
-                #break
+
+        
     else: 
         prompt_dataset = PromptDataset(tokenizer=tokenizer, data_path='datasets/prompts_en.jsonl', max_datasets_size=16384)
         if dist.is_initialized() and dist.get_world_size() > 1:
@@ -209,14 +206,7 @@ def main(args):
                                        sampler=prompt_sampler,
                                        batch_size=args.experience_batch_size)
         print('prompt_dataloader', len(prompt_dataloader))
-        #for index, data in enumerate(prompt_dataloader):
-            #print(data)
-            #print(len(data['input_ids']))
-            #print(len(data['input_ids'][0]))
-            #print(len(data['attention_mask']))
-            #print(len(data['attention_mask'][0]))
-            #if(index > 1):
-            #    break
+        
         
         pretrain_dataset = SupervisedDataset(tokenizer=tokenizer,
                                              data_path='datasets/instinwild_en.json',
@@ -231,14 +221,34 @@ def main(args):
                                          sampler=pretrain_sampler,
                                          batch_size=args.ptx_batch_size,
                                          collate_fn=data_collator)
-        #for index, data in enumerate(pretrain_dataloader):
-            #print(data)
-            #print(len(data['input_ids']))
-            #print(len(data['input_ids'][0]))
-            #print(len(data['attention_mask']))
-            #print(len(data['attention_mask'][0]))
-            #if(index > 1):
-                #break
+    '''
+    for index, data in enumerate(prompt_dataloader):
+        print(data)
+        #print(len(data['input_ids']))
+        print(data['input_ids'][0])
+        print(tokenizer.decode(data['input_ids'][0]))
+        print('-'*25)
+        #print(len(data['attention_mask']))
+        print(data['attention_mask'][0])
+        print('-'*50)
+        if(index > 1):
+            break
+    print('*'*100)
+    for index, data in enumerate(pretrain_dataloader):
+        print(data)
+        #print(len(data['input_ids']))
+        print(data['input_ids'][0])
+        print(tokenizer.decode(data['input_ids'][0]))
+        print('-'*25)
+        print(data['labels'][0])
+        print(tokenizer.decode(data['labels'][0]))
+        #print(tokenizer.decode(data['labels'][0]))
+        #print(len(data['attention_mask']))
+        print(data['attention_mask'][0])
+        print('-'*50)
+        if(index > 1):
+            break
+    '''
     
     (actor, actor_optim), (critic, critic_optim) = strategy.prepare((actor, actor_optim), (critic, critic_optim))
 
