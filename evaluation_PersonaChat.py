@@ -18,7 +18,7 @@ from transformers import AutoTokenizer, LlamaForCausalLM, OPTForCausalLM, BloomF
 from build_data_PersonaChat import create_encoder_input, create_decoder_input, pad_dataset
 from coati.models import convert_to_lora_module
 import os 
-os.environ['CUDA_VISIBLE_DEVICES'] = '2' 
+os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
 
 class TransformerAgent(Agent):
     @staticmethod
@@ -68,12 +68,13 @@ class TransformerAgent(Agent):
         else:
             #args.model_checkpoint == './checkpoint/step1/epoch5':
             self.tokenizer = AutoTokenizer.from_pretrained(args.model_checkpoint)
-
+            #self.tokenizer = BartTokenizer.from_pretrained(args.model_checkpoint)
             #self.model_checkpoint = convert_to_lora_module(LlamaForCausalLM.from_pretrained(args.model_checkpoint), 16).half()
             #self.model_checkpoint = BloomForCausalLM.from_pretrained(args.model_checkpoint)
             #self.model_checkpoint = OPTForCausalLM.from_pretrained(args.model_checkpoint)
             
             self.model_checkpoint = LlamaForCausalLM.from_pretrained(args.model_checkpoint)
+            #self.model_checkpoint = LMEDRModel.from_pretrained(args.model_checkpoint)
             #state_dict = torch.load('./checkpoint_opt1.3Biml/step3/epoch51/rmpersona.pt', map_location='cpu')
             #self.model_checkpoint.load_state_dict(state_dict, strict=False)
             #reward_model.to(torch.float16).to(torch.cuda.current_device())
@@ -94,7 +95,7 @@ class TransformerAgent(Agent):
         self.eos_id = self.tokenizer.eos_token_id
         self.pad_id = self.tokenizer.pad_token_id
         self.sep_id = self.tokenizer.sep_token_id
-        #self.sep_id = 10000
+        #print(self.bos_id, self.eos_id, self.pad_id, self.sep_id)
         self.persona = []
         self.history = []
         self.labels = []
@@ -213,6 +214,8 @@ class TransformerAgent(Agent):
                                                    clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
                 #else:
                 '''
+                
+                
                 #print(tensor_input_ids)
                 #print("-"*50)
                 out_ids = self.model_checkpoint.generate(input_ids=tensor_input_ids,
@@ -222,17 +225,30 @@ class TransformerAgent(Agent):
                                                         top_p=self.args.top_p,
                                                         num_return_sequences=1,
                                                         num_beams=self.args.beam)
-                '''
+                
                 out_text = self.tokenizer.batch_decode([out_ids[0][len(tensor_input_ids[0])+1:]], 
                                                         skip_special_tokens=True,
                                                         spaces_between_special_tokens=False,
                                                         clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
                 '''
-                out_text = self.tokenizer.batch_decode([out_ids[0][len(tensor_input_ids[0])+1:]], 
-                                                        skip_special_tokens=True,
-                                                        spaces_between_special_tokens=False,
-                                                        clean_up_tokenization_spaces=(self.args.eval_type != 'f1'))
-            print(out_text)
+                
+                out_ids = self.model_checkpoint.generate(input_ids=tensor_input_ids,
+                                                         attention_mask=tensor_attention_mask,
+                                                        max_length=self.args.max_length,
+                                                        top_k=self.args.top_k,
+                                                        top_p=self.args.top_p,
+                                                        num_return_sequences=3,
+                                                        num_beams=self.args.beam)
+                
+                out_text = self.tokenizer.batch_decode([out_ids[0]])
+                print(out_ids[0])
+                print(out_text)
+                print("-"*50)
+                out_text = self.tokenizer.batch_decode([out_ids[2]])
+                print(out_ids[2])
+                print(out_text)
+                print("-"*100)
+                '''
             #print(tensor_input_ids)
             #print('-'*25)
             #print([out_ids[0][len(tensor_input_ids[0]):]])
@@ -244,7 +260,7 @@ class TransformerAgent(Agent):
             #print('-'*100)
             
             ans = out_text[0].strip()
-            # print(ans)
+            print(ans)
             reply = {'text': ans}
         
         return reply
